@@ -16,14 +16,20 @@ contract Factory {
         address indexed championshipAddress,
         string description,
         uint256 startDate,
-        uint256 endDate
+        uint256 endDate,
+        Championship.Competitor[] competitors,
+        Championship.BettingOpportunityInput[] bettingOpportunities
     );
     
     event TournamentCreated(
         address indexed tournamentAddress,
         address indexed championshipContract,
         string description,
-        uint256 registrationEndTime
+        uint256 registrationEndTime,
+        uint256 generalClosingWindowInSeconds,
+        uint256[] prizeDistribution,
+        uint16[] selectedBetIds,
+        uint8 bonusPointsPercentage
     );
     
     // State variables
@@ -53,6 +59,14 @@ contract Factory {
     function setPlatformAdmin(address _newAdmin) external onlyPlatformAdmin {
         require(_newAdmin != address(0), "New admin cannot be zero address");
         platformAdmin = _newAdmin;
+    }
+    
+    /**
+     * @notice Gets the platform admin address
+     * @return Address of the platform admin
+     */
+    function getPlatformAdmin() external view returns (address) {
+        return platformAdmin;
     }
 
     /**
@@ -126,7 +140,9 @@ contract Factory {
             championshipAddress,
             _description,
             _startDate,
-            _endDate
+            _endDate,
+            _competitors,
+            _bettingOpportunities
         );
         
         return championshipAddress;
@@ -175,7 +191,9 @@ contract Factory {
         for (uint256 i = 0; i < _prizeDistribution.length; i++) {
             totalPercentage += _prizeDistribution[i];
         }
-        require(totalPercentage == 100, "Prize distribution must sum to 100");
+        require(totalPercentage == 985, "Prize distribution must sum to 98.5% (985/1000)");
+        
+        // 1% goes to platform and 0.5% to tournament creator
         
         // Check for duplicate bet IDs
         for (uint256 i = 0; i < _selectedBetIds.length; i++) {
@@ -227,7 +245,11 @@ contract Factory {
             tournamentAddress,
             _championshipContract,
             _description,
-            championshipStartDate // Use championship start date as registration end time
+            championshipStartDate,
+            _generalClosingWindowInSeconds,
+            _prizeDistribution,
+            _selectedBetIds,
+            _bonusPointsPercentage
         );
         
         return tournamentAddress;

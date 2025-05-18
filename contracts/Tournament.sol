@@ -31,8 +31,9 @@ contract Tournament {
     }
 
     struct Bet {
+        uint8 betCount; // Number of bets placed by participant (max 3)
         bool placed;
-        uint16[] predictedPositions; // Competitor IDs in predicted positions
+        uint16[][3] predictedPositions; // Array of up to 3 bets per betting opportunity
     }
 
     // For tracking winners and tournament state
@@ -47,7 +48,13 @@ contract Tournament {
     uint256 public constant MAXIMUM_PRIZE_POSITIONS = 10; // Maximum number of prize positions
     uint256 public constant EXACT_MATCH_MULTIPLIER = 100; // Base percentage for exact match (100%)
     uint256 public constant POSITION_MATCH_MULTIPLIER = 50; // Points for right competitor, wrong position (50%)
-
+    uint8 public constant MAX_BETS_PER_OPPORTUNITY = 3; // Maximum number of bets per betting opportunity
+    
+    // Fee percentages
+    uint256 public constant PLATFORM_FEE_PERCENTAGE = 1; // 1% to platform
+    uint256 public constant CREATOR_FEE_PERCENTAGE = 5; // 0.5% to tournament creator
+    uint256 public constant WINNER_DISTRIBUTION_PERCENTAGE = 985; // 98.5% to winners
+    
     // State variables
     address public admin;
     address public championshipContract;
@@ -256,10 +263,20 @@ contract Tournament {
         // Verify predicted positions length matches expected
         require(_predictedPositions.length == 3, "Must provide exactly top 3 positions");
         
-        // Store the bet
+        // Check if participant has reached the maximum number of bets for this opportunity
         Participant storage participant = participants[msg.sender];
-        participant.bets[_betId].placed = true;
-        participant.bets[_betId].predictedPositions = _predictedPositions;
+        require(participant.bets[_betId].betCount < MAX_BETS_PER_OPPORTUNITY, "Maximum number of bets reached for this opportunity");
+        
+        // Initialize bet data structure if this is the first bet
+        if (!participant.bets[_betId].placed) {
+            participant.bets[_betId].placed = true;
+            participant.bets[_betId].betCount = 0;
+        }
+        
+        // Store the bet in the next available slot
+        uint8 currentBetIndex = participant.bets[_betId].betCount;
+        participant.bets[_betId].predictedPositions[currentBetIndex] = _predictedPositions;
+        participant.bets[_betId].betCount++;
         
         emit BetPlaced(msg.sender, _betId, _predictedPositions);
     }
@@ -323,23 +340,40 @@ contract Tournament {
      * @notice Gets a participant's bet for a specific betting opportunity
      * @param _participant Address of the participant
      * @param _betId ID of the betting opportunity
+     * @param _betIndex Index of the bet (0, 1, or 2)
      * @return predictedPositions Array of competitor IDs in predicted positions
      */
-    function getParticipantBet(address _participant, uint16 _betId) 
+    function getParticipantBet(address _participant, uint16 _betId, uint8 _betIndex) 
         external 
         view 
         returns (uint16[] memory) 
     {
         require(participants[_participant].bets[_betId].placed, "Bet not placed");
-        return participants[_participant].bets[_betId].predictedPositions;
+        require(_betIndex < participants[_participant].bets[_betId].betCount, "Bet index out of range");
+        
+        // Create a copy of the storage array to return
+        uint16[] memory result = new uint16[](3);
+        for (uint8 i = 0; i < 3; i++) {
+            result[i] = participants[_participant].bets[_betId].predictedPositions[_betIndex][i];
+        }
+        return result;
     }
 
     /**
-     * @notice Gets all participants in the tournament
-     * @return Array of participant addresses
+     * @notice Gets the number of bets a participant has placed for a specific betting opportunity
+     * @param _participant Address of the participant
+     * @param _betId ID of the betting opportunity
+     * @return Number of bets placed (0-3)
      */
-    function getParticipants() external view returns (address[] memory) {
-        return participantAddresses;
+    function getParticipantBetCount(address _participant, uint16 _betId) 
+        external 
+        view 
+        returns (uint8) 
+    {
+        if (!participants[_participant].bets[_betId].placed) {
+            return 0;
+        }
+        return participants[_participant].bets[_betId].betCount;
     }
 
     /**
@@ -348,14 +382,6 @@ contract Tournament {
      */
     function getPrizePool() external view returns (uint256) {
         return totalPrizePool;
-    }
-
-    /**
-     * @notice Gets the selected betting opportunities for this tournament
-     * @return Array of betting opportunity IDs
-     */
-    function getSelectedBets() external view returns (uint16[] memory) {
-        return params.selectedBetIds;
     }
 
     /**
@@ -418,18 +444,30 @@ contract Tournament {
                 continue;
             }
             
-            // Calculate and award points
-            uint256 points = calculatePoints(
-                participant.bets[_betId].predictedPositions,
-                results,
-                pointValues
-            );
+            // Process each bet for this opportunity
+            uint256 totalPointsForBets = 0;
+            for (uint8 betIndex = 0; betIndex < participant.bets[_betId].betCount; betIndex++) {
+                // Get predicted positions for this bet
+                uint16[] memory predictedPositions = new uint16[](3);
+                for (uint8 j = 0; j < 3; j++) {
+                    predictedPositions[j] = participant.bets[_betId].predictedPositions[betIndex][j];
+                }
+                
+                // Calculate points for this bet
+                uint256 points = calculatePoints(
+                    predictedPositions,
+                    results,
+                    pointValues
+                );
+                
+                totalPointsForBets += points;
+            }
             
             // Add points to participant's total
-            participant.totalPoints += points;
+            participant.totalPoints += totalPointsForBets;
             participant.betScored[_betId] = true;
             
-            emit PointsAwarded(participantAddr, _betId, points);
+            emit PointsAwarded(participantAddr, _betId, totalPointsForBets);
         }
         
         emit ResultsProcessed(_betId, results);
@@ -522,10 +560,27 @@ contract Tournament {
             updateLeaderboard();
         }
         
+        // Calculate platform and creator fees
+        uint256 platformFee = totalPrizePool * PLATFORM_FEE_PERCENTAGE / 1000;
+        uint256 creatorFee = totalPrizePool * CREATOR_FEE_PERCENTAGE / 1000;
+        
+        // Pay platform fee to factory owner
+        address payable factoryOwner = payable(Factory(factory).getPlatformAdmin());
+        if (factoryOwner != address(0)) {
+            factoryOwner.transfer(platformFee);
+        }
+        
+        // Pay tournament creator fee
+        address payable creatorAddress = payable(admin);
+        if (creatorAddress != address(0)) {
+            creatorAddress.transfer(creatorFee);
+        }
+        
         // Calculate prize amounts based on distribution
+        uint256 winnerPool = totalPrizePool * WINNER_DISTRIBUTION_PERCENTAGE / 1000;
         uint256[] memory prizeAmounts = new uint256[](params.prizeDistribution.length);
         for (uint256 i = 0; i < params.prizeDistribution.length; i++) {
-            prizeAmounts[i] = totalPrizePool * params.prizeDistribution[i] / 100;
+            prizeAmounts[i] = winnerPool * params.prizeDistribution[i] / 985; // Adjust for 98.5%
         }
         
         // Distribute prizes to winners
@@ -595,33 +650,5 @@ contract Tournament {
         finalized = leaderboard.finalized;
         
         return (addresses, pointsArray, finalized);
-    }
-    
-    /**
-     * @notice Gets the percentage of the prize pool for a specific rank
-     * @param _rank Rank in the leaderboard (0-based index)
-     * @return Percentage of the prize pool allocated to this rank
-     */
-    function getPrizePercentForRank(uint256 _rank) external view returns (uint256) {
-        require(_rank < params.prizeDistribution.length, "Rank exceeds prize distribution length");
-        return params.prizeDistribution[_rank];
-    }
-
-    /**
-     * @notice Gets the results of a specific betting opportunity
-     * @param _betId ID of the betting opportunity
-     * @return results Array of competitor IDs in finishing positions
-     * @return processed Whether the results have been processed
-     */
-    function getBettingResults(uint16 _betId) external view returns (
-        uint16[] memory results,
-        bool processed
-    ) {
-        processed = bettingOpportunityScored[_betId];
-        if (processed) {
-            results = actualResults[_betId];
-        }
-        
-        return (results, processed);
     }
 } 
