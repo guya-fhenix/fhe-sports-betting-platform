@@ -3,7 +3,7 @@ import hre from 'hardhat'
 import { expect } from 'chai'
 import { time } from '@nomicfoundation/hardhat-toolbox/network-helpers'
 import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
-import { Contract } from 'ethers'
+import { Championship, Factory } from '../typechain-types'
 
 describe('Championship', function () {
   // Fixtures
@@ -25,39 +25,55 @@ describe('Championship', function () {
       { id: 3, name: 'Charles Leclerc' }
     ];
 
-    // Define betting opportunities
+    // Define betting opportunities using the BettingOpportunityInput struct
     const bettingOpportunities = [
       { 
         id: 1, 
-        name: 'Monaco GP Qualifying',
-        description: 'Bet on the top 3 in Monaco GP Qualifying',
+        description: 'Monaco GP Qualifying - Bet on the top 3',
         startTime: currentTime + 3600, // 1 hour from now
-        endTime: 0,   // Will be set when results are finalized
-        resultsFinalized: false,
         pointValues: [10, 5, 2]
       },
       { 
         id: 2, 
-        name: 'Monaco GP Race',
-        description: 'Bet on the top 3 in Monaco GP Race',
+        description: 'Monaco GP Race - Bet on the top 3',
         startTime: 0, // Not yet known
-        endTime: 0,   // Will be set when results are finalized
-        resultsFinalized: false,
         pointValues: [15, 8, 3]
       }
     ];
 
-    // Deploy the Championship contract
-    const Championship = await hre.ethers.getContractFactory('Championship')
-    const championship = await Championship.deploy(
+    // Deploy the Factory contract
+    const Factory = await hre.ethers.getContractFactory('Factory')
+    const factory = await Factory.deploy()
+
+    // Deploy the Championship contract using the Factory
+    const tx = await factory.createChampionship(
       'Formula 1 2023 Championship Season',
       startDate,
       endDate,
       competitors,
       bettingOpportunities
     )
+    
+    const receipt = await tx.wait()
+    
+    // Find ChampionshipCreated event
+    const events = receipt?.logs.filter(log => {
+      try {
+        const parsedLog = factory.interface.parseLog(log)
+        return parsedLog?.name === 'ChampionshipCreated'
+      } catch {
+        return false
+      }
+    })
+    
+    const parsedEvent = factory.interface.parseLog(events![0])
+    const championshipAddress = parsedEvent?.args[0]
+    
+    // Get Championship contract instance
+    const Championship = await hre.ethers.getContractFactory('Championship')
+    const championship = Championship.attach(championshipAddress) as Championship
 
-    return { championship, admin, user1, user2, startDate, endDate, currentTime, competitors, bettingOpportunities }
+    return { championship, factory, admin, user1, user2, startDate, endDate, currentTime, competitors, bettingOpportunities }
   }
 
   // Tests for basic championship functionality
@@ -70,26 +86,6 @@ describe('Championship', function () {
       expect(await championship.endDate()).to.equal(endDate)
       expect(await championship.admin()).to.equal(admin.address)
       expect(await championship.active()).to.equal(true)
-    })
-
-    it('Should emit ChampionshipCreated event on deployment', async function () {
-      const { championship } = await loadFixture(deployChampionshipFixture)
-      const deploymentTxReceipt = await championship.deploymentTransaction()?.wait()
-      
-      // Get logs from the receipt
-      const logs = deploymentTxReceipt?.logs || []
-      
-      // Check if ChampionshipCreated event was emitted
-      const championshipCreatedEvent = logs.find(log => {
-        try {
-          const parsedLog = championship.interface.parseLog(log)
-          return parsedLog?.name === 'ChampionshipCreated'
-        } catch {
-          return false
-        }
-      })
-      
-      expect(championshipCreatedEvent).to.not.be.undefined
     })
   })
 
@@ -122,9 +118,13 @@ describe('Championship', function () {
         expect(bet.id).to.equal(bettingOpportunities[i].id)
         expect(bet.description).to.equal(bettingOpportunities[i].description)
         expect(bet.startTime).to.equal(bettingOpportunities[i].startTime)
-        // endTime should always be initialized to 0
+        // endTime should be initialized to 0
         expect(bet.endTime).to.equal(0)
+        // resultsFinalized should be initialized to false
         expect(bet.resultsFinalized).to.equal(false)
+        // topPositions should be an empty array
+        const results = await championship.getResults(bettingOpportunities[i].id)
+        expect(results.length).to.equal(0)
         
         const pointValues = await championship.getPointValues(bettingOpportunities[i].id)
         expect(pointValues.length).to.equal(3)
@@ -137,11 +137,32 @@ describe('Championship', function () {
 
   // Tests for results management
   describe('Results Management', function () {
-    it('Should allow admin to set results and end time together', async function () {
+    it('Should allow admin to set results and end time', async function () {
       const { championship, admin, currentTime } = await loadFixture(deployChampionshipFixture)
       
-      // Cannot test in this way - this interface has changed
-      // Test skipped to make compilation pass
+      const betId = 1; // Use the first betting opportunity
+      const topPositions = [2, 1, 3]; // Max, Lewis, Charles
+      const endTime = currentTime + 5000;
+      
+      // First set the start time to something non-zero if it's not already set
+      if ((await championship.bettingOpportunities(betId)).startTime === 0n) {
+        await championship.connect(admin).updateBettingOpportunityStartTime(betId, currentTime + 1000);
+      }
+      
+      // Set the results
+      await championship.connect(admin).setResults(betId, topPositions, endTime);
+      
+      // Verify results were set
+      const storedResults = await championship.getResults(betId);
+      expect(storedResults.length).to.equal(3);
+      expect(storedResults[0]).to.equal(topPositions[0]);
+      expect(storedResults[1]).to.equal(topPositions[1]);
+      expect(storedResults[2]).to.equal(topPositions[2]);
+      
+      // Verify other properties were updated
+      const bet = await championship.bettingOpportunities(betId);
+      expect(bet.endTime).to.equal(endTime);
+      expect(bet.resultsFinalized).to.equal(true);
     })
   })
 
@@ -154,17 +175,17 @@ describe('Championship', function () {
       await time.increaseTo(currentTime + 3700) // bet 1 starts at currentTime + 3600
       
       // Check that window is open
-      expect(await championship.isBettingWindowOpen(1)).to.equal(true)
+      expect(await championship.isBettingWindowOpen(1, 300)).to.equal(true)
     })
     
     it('Should identify when betting window is not yet open', async function () {
       const { championship } = await loadFixture(deployChampionshipFixture)
       
       // Check that window for bet 1 is not yet open (default fixture time is before start time)
-      expect(await championship.isBettingWindowOpen(1)).to.equal(false)
+      expect(await championship.isBettingWindowOpen(1, 300)).to.equal(false)
       
       // Check that window for bet 2 is not open (start time is 0)
-      expect(await championship.isBettingWindowOpen(2)).to.equal(false)
+      expect(await championship.isBettingWindowOpen(2, 300)).to.equal(false)
     })
   })
 }) 

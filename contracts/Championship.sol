@@ -12,6 +12,14 @@ contract Championship {
         string name;
     }
 
+    // Input struct for betting opportunities
+    struct BettingOpportunityInput {
+        uint16 id;
+        string description;
+        uint256 startTime; // Can be 0 if not yet known
+        uint256[] pointValues; // Points for 1st, 2nd, 3rd positions
+    }
+
     struct BettingOpportunity {
         uint16 id;
         string description;
@@ -19,9 +27,6 @@ contract Championship {
         uint256 endTime;   // Will be set when results are finalized
         bool resultsFinalized;
         uint256[] pointValues; // Points for 1st, 2nd, 3rd positions
-    }
-
-    struct Result {
         uint16[] topPositions; // IDs of competitors in 1st, 2nd, 3rd positions
     }
 
@@ -38,13 +43,8 @@ contract Championship {
     
     mapping(uint16 => BettingOpportunity) public bettingOpportunities;
     uint16[] public bettingOpportunityIds;
-    
-    mapping(uint16 => Result) private results; // betId => Result
 
     // Events
-    event ChampionshipCreated(string description, uint256 startDate, uint256 endDate);
-    event CompetitorAdded(uint16 id, string name);
-    event BettingOpportunityCreated(uint16 id, string description);
     event BettingOpportunityStartTimeUpdated(uint16 id, uint256 startTime);
     event ResultsUpdated(uint16 bettingOpportunityId, uint16[] topPositions, uint256 endTime);
 
@@ -71,58 +71,56 @@ contract Championship {
 
     /**
      * @notice Creates a new championship with predefined competitors and betting opportunities
+     * @param _admin The address of the championship administrator
      * @param _description Description of the championship
      * @param _startDate Start date of the championship (unix timestamp)
      * @param _endDate End date of the championship (unix timestamp)
-     * @param _competitors Array of competitors participating in the championship
-     * @param _bettingOpportunities Array of betting opportunities within the championship
+     * @param _competitors Array of competitors to add
+     * @param _bettingOpportunityInputs Array of betting opportunity inputs to add
      */
     constructor(
+        address _admin,
         string memory _description,
         uint256 _startDate,
         uint256 _endDate,
         Competitor[] memory _competitors,
-        BettingOpportunity[] memory _bettingOpportunities
+        BettingOpportunityInput[] memory _bettingOpportunityInputs
     ) {
-        require(_startDate < _endDate, "End date must be after start date");
+        // All validations are handled by the Factory
         
-        admin = msg.sender;
+        admin = _admin;
         description = _description;
         startDate = _startDate;
         endDate = _endDate;
         active = true;
         
-        // Add competitors
+        // Create competitor IDs array and store competitor data
+        competitorIds = new uint16[](_competitors.length);
         for (uint i = 0; i < _competitors.length; i++) {
             Competitor memory competitor = _competitors[i];
-            require(competitors[competitor.id].id != competitor.id, "Duplicate competitor ID");
-            
             competitors[competitor.id] = competitor;
-            competitorIds.push(competitor.id);
-            
-            emit CompetitorAdded(competitor.id, competitor.name);
+            competitorIds[i] = competitor.id;
         }
         
-        // Add betting opportunities
-        for (uint i = 0; i < _bettingOpportunities.length; i++) {
-            BettingOpportunity memory bet = _bettingOpportunities[i];
-            require(bettingOpportunities[bet.id].id != bet.id, "Duplicate betting opportunity ID");
-            require(bet.pointValues.length == 3, "Must provide exactly 3 point values");
+        // Create betting opportunity IDs array and store betting opportunity data
+        bettingOpportunityIds = new uint16[](_bettingOpportunityInputs.length);
+        for (uint i = 0; i < _bettingOpportunityInputs.length; i++) {
+            BettingOpportunityInput memory input = _bettingOpportunityInputs[i];
             
-            // Initialize with all necessary fields but ensure endTime is 0 (will be set when results are finalized)
-            bettingOpportunities[bet.id] = BettingOpportunity({
-                id: bet.id,
-                description: bet.description,
-                startTime: bet.startTime,
-                endTime: 0, // Always initialize as 0, will be set when results are finalized
-                resultsFinalized: false,
-                pointValues: bet.pointValues
+            // Create full betting opportunity with default values for restricted fields
+            BettingOpportunity memory bet = BettingOpportunity({
+                id: input.id,
+                description: input.description,
+                startTime: input.startTime,
+                endTime: 0,  // Initialize to 0
+                resultsFinalized: false,  // Initialize to false
+                pointValues: input.pointValues,
+                topPositions: new uint16[](0)  // Initialize as empty array
             });
             
-            bettingOpportunityIds.push(bet.id);
+            bettingOpportunities[bet.id] = bet;
+            bettingOpportunityIds[i] = bet.id;
         }
-        
-        emit ChampionshipCreated(description, startDate, endDate);
     }
 
     /**
@@ -168,10 +166,8 @@ contract Championship {
             require(competitors[_topPositions[i]].id == _topPositions[i], "Competitor does not exist");
         }
         
-        results[_betId] = Result({
-            topPositions: _topPositions
-        });
-        
+        // Store results directly
+        bet.topPositions = _topPositions;
         bet.endTime = _endTime;
         bet.resultsFinalized = true;
         
@@ -184,7 +180,7 @@ contract Championship {
      * @return Array of competitor IDs in finishing positions 1st, 2nd, and 3rd
      */
     function getResults(uint16 _betId) external view bettingOpportunityExists(_betId) returns (uint16[] memory) {
-        return results[_betId].topPositions;
+        return bettingOpportunities[_betId].topPositions;
     }
 
     /**
@@ -201,16 +197,30 @@ contract Championship {
      * @param _betId The ID of the betting opportunity to check
      * @return Boolean indicating if the betting window is open
      */
-    function isBettingWindowOpen(uint16 _betId) external view bettingOpportunityExists(_betId) returns (bool) {
+    function isBettingWindowOpen(uint16 _betId, uint32 _closingWindowInSeconds) 
+        external 
+        view 
+        bettingOpportunityExists(_betId) 
+        returns (bool) 
+    {
         BettingOpportunity storage bet = bettingOpportunities[_betId];
         
-        // If start time is not set (0), or if current time is before start time, window is not open
-        if (bet.startTime == 0 || block.timestamp < bet.startTime) {
+        // If start time is not set (0), window is not open
+        if (bet.startTime == 0) {
             return false;
         }
         
-        // If results are finalized (end time is set), window is not open
-        return !bet.resultsFinalized;
+        // If results are finalized, window is not open
+        if (bet.resultsFinalized) {
+            return false;
+        }
+        
+        // If current time is before start time, window is not open
+        if (block.timestamp < bet.startTime - _closingWindowInSeconds) {
+            return false;
+        }
+        
+        return true;
     }
 
     /**

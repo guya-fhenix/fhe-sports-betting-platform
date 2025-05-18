@@ -11,6 +11,12 @@ const config: HardhatUserConfig = {
 	solidity: {
 		version: '0.8.25',
 		settings: {
+			optimizer: {
+				enabled: true,
+				runs: 200
+			},
+			// Enable viaIR to avoid stack too deep errors
+			viaIR: true,
 			evmVersion: 'cancun'
 		}
 	},
@@ -18,6 +24,10 @@ const config: HardhatUserConfig = {
 	// defaultNetwork: 'localcofhe',
 	networks: {
 		// The plugin already provides localcofhe configuration
+		hardhat: {
+			// Increase the contract size limit for testing
+			allowUnlimitedContractSize: true,
+		},
 
 		// Sepolia testnet configuration
 		'eth-sepolia': {
