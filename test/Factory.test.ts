@@ -2,7 +2,6 @@ import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers'
 import hre from 'hardhat'
 import { expect } from 'chai'
 import { time } from '@nomicfoundation/hardhat-toolbox/network-helpers'
-import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
 import { Championship, Factory, Tournament } from '../typechain-types'
 
 describe('Factory', function () {
@@ -17,7 +16,7 @@ describe('Factory', function () {
     const endDate = currentTime + oneWeek
     
     // Get signers
-    const [deployer, user1, user2, user3] = await hre.ethers.getSigners()
+    const [deployer, user1] = await hre.ethers.getSigners()
 
     // Define competitors for Championship
     const competitors = [
@@ -63,8 +62,6 @@ describe('Factory', function () {
       bettingOpportunities,
       deployer, 
       user1, 
-      user2, 
-      user3,
       tournamentDescription,
       entryFee,
       prizeDistribution,

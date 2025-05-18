@@ -2,8 +2,7 @@ import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers'
 import hre from 'hardhat'
 import { expect } from 'chai'
 import { time } from '@nomicfoundation/hardhat-toolbox/network-helpers'
-import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
-import { Championship, Factory, Tournament } from '../typechain-types'
+import { Championship, Tournament } from '../typechain-types'
 
 describe('Tournament', function () {
   // Fixtures
@@ -16,7 +15,7 @@ describe('Tournament', function () {
     const endDate = currentTime + oneWeek
     
     // Get signers
-    const [admin, user1, user2, user3, user4, user5, user6] = await hre.ethers.getSigners()
+    const [admin, user1, user2, user3, user4, user5] = await hre.ethers.getSigners()
 
     // Define competitors for Championship
     const competitors = [
@@ -122,7 +121,6 @@ describe('Tournament', function () {
       user3,
       user4,
       user5,
-      user6,
       currentTime, 
       startDate,
       entryFee
@@ -157,7 +155,7 @@ describe('Tournament', function () {
     })
     
     it('Should reject registrations after championship starts', async function () {
-      const { tournament, championship, user1, entryFee, startDate } = await loadFixture(deployFixture)
+      const { tournament, user1, entryFee, startDate } = await loadFixture(deployFixture)
       
       // Fast forward time past championship start
       await time.increaseTo(startDate + 1)
@@ -195,7 +193,7 @@ describe('Tournament', function () {
     })
     
     it('Should prevent withdrawal after championship starts', async function () {
-      const { tournament, championship, user1, entryFee, startDate } = await loadFixture(deployFixture)
+      const { tournament, user1, entryFee, startDate } = await loadFixture(deployFixture)
       
       // Register user
       await tournament.connect(user1).register('Alice', { value: entryFee })
@@ -305,7 +303,7 @@ describe('Tournament', function () {
         .to.emit(tournament, 'PointsAwarded')
       
       // Check leaderboard
-      const [addresses, points, finalized] = await tournament.getLeaderboard()
+      const [addresses, points] = await tournament.getLeaderboard()
       
       // Alice should have the highest points
       expect(addresses[0]).to.equal(user1.address)
@@ -355,9 +353,6 @@ describe('Tournament', function () {
       
       // Finalize tournament
       await tournament.connect(admin).finalizeTournament()
-      
-      // Get current blockchain time
-      const resultTime = await time.latest()
 
       // Ensure we know the correct start time for the betting opportunities
       const bet1 = await championship.bettingOpportunities(1)
@@ -373,8 +368,6 @@ describe('Tournament', function () {
       
       // Record initial balances
       const initialBalance1 = await hre.ethers.provider.getBalance(user1.address)
-      const initialBalance2 = await hre.ethers.provider.getBalance(user2.address)
-      const initialBalance3 = await hre.ethers.provider.getBalance(user3.address)
       
       // Process results for first betting opportunity
       await tournament.connect(admin).processResults(1)
@@ -388,8 +381,6 @@ describe('Tournament', function () {
       
       // Check final balances - winners should have received prize money
       const finalBalance1 = await hre.ethers.provider.getBalance(user1.address)
-      const finalBalance2 = await hre.ethers.provider.getBalance(user2.address)
-      const finalBalance3 = await hre.ethers.provider.getBalance(user3.address)
       
       // User1 should be the top winner with 50% of prize pool
       expect(finalBalance1).to.be.greaterThan(initialBalance1)
@@ -433,14 +424,11 @@ describe('Tournament', function () {
       await tournament.connect(user5).placeBet(1, [2, 3, 1])
       await tournament.connect(user5).placeBet(2, [2, 3, 1])
       
-      // Fast forward time past championship start time
+      // Fast-forward time past championship start time
       await time.increaseTo(BigInt(startDate))
       
       // Finalize tournament
       await tournament.connect(admin).finalizeTournament()
-      
-      // Get current blockchain time
-      const resultTime = await time.latest()
       
       // Ensure we know the correct start time for the betting opportunities
       const bet1 = await championship.bettingOpportunities(1)
@@ -459,8 +447,6 @@ describe('Tournament', function () {
 
       // Record balances before final distribution
       const initialBalance1 = await hre.ethers.provider.getBalance(user1.address)
-      const initialBalance2 = await hre.ethers.provider.getBalance(user2.address)
-      const initialBalance3 = await hre.ethers.provider.getBalance(user3.address)
       
       // Process the second result - this will automatically distribute winnings
       await expect(tournament.connect(admin).processResults(2))
@@ -471,8 +457,6 @@ describe('Tournament', function () {
       
       // Check final balances
       const finalBalance1 = await hre.ethers.provider.getBalance(user1.address)
-      const finalBalance2 = await hre.ethers.provider.getBalance(user2.address)
-      const finalBalance3 = await hre.ethers.provider.getBalance(user3.address)
       
       // User1 should have received prize
       expect(finalBalance1).to.be.greaterThan(initialBalance1)

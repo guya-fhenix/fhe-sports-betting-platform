@@ -2,8 +2,7 @@ import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers'
 import hre from 'hardhat'
 import { expect } from 'chai'
 import { time } from '@nomicfoundation/hardhat-toolbox/network-helpers'
-import { SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers'
-import { Championship, Factory } from '../typechain-types'
+import { Championship } from '../typechain-types'
 
 describe('Championship', function () {
   // Fixtures
@@ -16,7 +15,7 @@ describe('Championship', function () {
     const endDate = currentTime + oneWeek
 
     // Get signers
-    const [admin, user1, user2] = await hre.ethers.getSigners()
+    const [admin] = await hre.ethers.getSigners()
 
     // Define competitors
     const competitors = [
@@ -73,7 +72,7 @@ describe('Championship', function () {
     const Championship = await hre.ethers.getContractFactory('Championship')
     const championship = Championship.attach(championshipAddress) as Championship
 
-    return { championship, factory, admin, user1, user2, startDate, endDate, currentTime, competitors, bettingOpportunities }
+    return { championship, admin, startDate, endDate, currentTime, competitors, bettingOpportunities }
   }
 
   // Tests for basic championship functionality
@@ -85,7 +84,6 @@ describe('Championship', function () {
       expect(await championship.startDate()).to.equal(startDate)
       expect(await championship.endDate()).to.equal(endDate)
       expect(await championship.admin()).to.equal(admin.address)
-      expect(await championship.active()).to.equal(true)
     })
   })
 

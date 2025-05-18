@@ -13,7 +13,6 @@ contract Tournament {
     // Structs
     struct TournamentParams {
         string description;
-        uint256 registrationEndTime;
         uint256 entryFee;
         uint256 minParticipants;
         uint256[] prizeDistribution; // Array of percentages (e.g. [50, 30, 20] for 1st, 2nd, 3rd), max 10 positions
@@ -122,7 +121,6 @@ contract Tournament {
      * @param _admin Address of the tournament administrator
      * @param _description Description of the tournament
      * @param _championshipContract Address of the championship contract
-     * @param _registrationEndTime Registration end time (matches championship start date)
      * @param _entryFee Entry fee in wei
      * @param _prizeDistribution Array of percentages for prize distribution
      * @param _selectedBetIds Array of betting opportunity IDs selected for this tournament
@@ -133,7 +131,6 @@ contract Tournament {
         address _admin,
         string memory _description,
         address _championshipContract,
-        uint256 _registrationEndTime,
         uint256 _entryFee,
         uint256[] memory _prizeDistribution,
         uint16[] memory _selectedBetIds,
@@ -146,7 +143,6 @@ contract Tournament {
         championshipContract = _championshipContract;
         params = TournamentParams({
             description: _description,
-            registrationEndTime: _registrationEndTime,
             entryFee: _entryFee,
             minParticipants: MINIMUM_REQUIRED_PARTICIPANTS,
             prizeDistribution: _prizeDistribution,
@@ -256,7 +252,6 @@ contract Tournament {
         // Check if betting window is open in championship
         Championship championship = Championship(championshipContract);
         require(championship.isBettingWindowOpen(_betId, params.generalClosingWindowInSeconds), "Betting window is closed");
-
         
         // Verify predicted positions length matches expected
         require(_predictedPositions.length == 3, "Must provide exactly top 3 positions");
@@ -405,7 +400,7 @@ contract Tournament {
         require(results.length == 3, "Results not available or incomplete");
         
         // Get point values
-        uint256[] memory pointValues = championship.getPointValues(_betId);
+        uint16[] memory pointValues = championship.getPointValues(_betId);
         require(pointValues.length == 3, "Point values not available or incomplete");
         
         // Store results
@@ -456,7 +451,7 @@ contract Tournament {
     function calculatePoints(
         uint16[] memory _predicted,
         uint16[] memory _actual,
-        uint256[] memory _pointValues
+        uint16[] memory _pointValues
     ) internal view returns (uint256) {
         uint256 totalPoints = 0;
         

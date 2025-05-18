@@ -99,6 +99,11 @@ contract Factory {
             
             // Validate point values
             require(bet.pointValues.length == 3, "Must provide exactly 3 point values");
+            
+            // Validate each point value is within the allowed range
+            for (uint k = 0; k < bet.pointValues.length; k++) {
+                require(bet.pointValues[k] <= 1000, "Point values cannot exceed 1000");
+            }
         }
         
         // Deploy championship contract with validated data
@@ -205,7 +210,6 @@ contract Factory {
             msg.sender, // Pass the original sender as admin
             _description,
             _championshipContract,
-            championshipStartDate, // Use championship start date as registration end time
             _entryFee,
             _prizeDistribution,
             _selectedBetIds,

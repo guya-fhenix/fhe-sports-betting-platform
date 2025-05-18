@@ -17,7 +17,7 @@ contract Championship {
         uint16 id;
         string description;
         uint256 startTime; // Can be 0 if not yet known
-        uint256[] pointValues; // Points for 1st, 2nd, 3rd positions
+        uint16[] pointValues; // Points for 1st, 2nd, 3rd positions
     }
 
     struct BettingOpportunity {
@@ -26,7 +26,7 @@ contract Championship {
         uint256 startTime; // Can be 0 if not yet known
         uint256 endTime;   // Will be set when results are finalized
         bool resultsFinalized;
-        uint256[] pointValues; // Points for 1st, 2nd, 3rd positions
+        uint16[] pointValues; // Points for 1st, 2nd, 3rd positions
         uint16[] topPositions; // IDs of competitors in 1st, 2nd, 3rd positions
     }
 
@@ -35,7 +35,6 @@ contract Championship {
     string public description;
     uint256 public startDate;
     uint256 public endDate;
-    bool public active;
 
     // Storage
     mapping(uint16 => Competitor) public competitors;
@@ -87,12 +86,10 @@ contract Championship {
         BettingOpportunityInput[] memory _bettingOpportunityInputs
     ) {
         // All validations are handled by the Factory
-        
         admin = _admin;
         description = _description;
         startDate = _startDate;
         endDate = _endDate;
-        active = true;
         
         // Create competitor IDs array and store competitor data
         competitorIds = new uint16[](_competitors.length);
@@ -188,7 +185,7 @@ contract Championship {
      * @param _betId The ID of the betting opportunity
      * @return Array of point values for 1st, 2nd, and 3rd positions
      */
-    function getPointValues(uint16 _betId) external view bettingOpportunityExists(_betId) returns (uint256[] memory) {
+    function getPointValues(uint16 _betId) external view bettingOpportunityExists(_betId) returns (uint16[] memory) {
         return bettingOpportunities[_betId].pointValues;
     }
 
