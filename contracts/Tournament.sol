@@ -28,7 +28,7 @@ contract Tournament {
     }
 
     // State variables
-    address public admin;
+    address public platformAdmin;
     string public description;
     uint256 public startTime;
     uint256 public endTime;
@@ -37,12 +37,28 @@ contract Tournament {
 
     // Events
     event BettingOpportunityStartTimeUpdated(uint16 id, uint256 startTime);
-    event ResultsUpdated(uint16 bettingOpportunityId, uint16 result, uint256 endTime);
 
     // Modifiers
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin can perform this action");
+    modifier onlyPlatformAdmin() {
+        require(msg.sender == platformAdmin, "Only platform admin can perform this action");
         _;
+    }
+
+    /**
+     * @notice Sets a new platform admin
+     * @param _newAdmin New admin address
+     */
+    function setPlatformAdmin(address _newAdmin) external onlyPlatformAdmin {
+        require(_newAdmin != address(0), "New admin cannot be zero address");
+        platformAdmin = _newAdmin;
+    }
+    
+    /**
+     * @notice Gets the platform admin address
+     * @return Address of the platform admin
+     */
+    function getPlatformAdmin() external view returns (address) {
+        return platformAdmin;
     }
 
     modifier bettingOpportunityExists(uint16 _betId) {
@@ -62,21 +78,21 @@ contract Tournament {
 
     /**
      * @notice Creates a new tournament with predefined competitors and betting opportunities
-     * @param _admin The address of the tournament administrator
+     * @param _platformAdmin The address of the platform admin
      * @param _description Description of the tournament
      * @param _startTime Start time of the tournament (unix timestamp)
      * @param _endTime End time of the tournament (unix timestamp)
      * @param _bettingOpportunityInputs Array of betting opportunity inputs to add
      */
     constructor(
-        address _admin,
+        address _platformAdmin,
         string memory _description,
         uint256 _startTime,
         uint256 _endTime,
         BettingOpportunityInput[] memory _bettingOpportunityInputs
     ) {
         // All validations are handled by the Factory
-        admin = _admin;
+        platformAdmin = _platformAdmin;
         description = _description;
         startTime = _startTime;
         endTime = _endTime;
@@ -109,7 +125,7 @@ contract Tournament {
     function updateBettingOpportunityStartTime(
         uint16 _betId,
         uint256 _startTime
-    ) external onlyAdmin bettingOpportunityExists(_betId) canUpdateStartTime(_betId) {
+    ) external onlyPlatformAdmin bettingOpportunityExists(_betId) canUpdateStartTime(_betId) {
         require(_startTime > 0, "Start time must be greater than 0");
         require(_startTime > block.timestamp, "Start time must be in the future");
         
@@ -130,7 +146,7 @@ contract Tournament {
         uint16 _betId,
         uint16 _result,
         uint256 _endTime
-    ) external onlyAdmin bettingOpportunityExists(_betId) {
+    ) external onlyPlatformAdmin bettingOpportunityExists(_betId) {
         require(!bettingOpportunities[_betId].resultsFinalized, "Results already finalized");
         require(_endTime > 0, "End time must be greater than 0");
         
@@ -142,8 +158,6 @@ contract Tournament {
         bet.result = _result;
         bet.endTime = _endTime;
         bet.resultsFinalized = true;
-        
-        emit ResultsUpdated(_betId, _result, _endTime);
     }
 
     /**
@@ -176,21 +190,16 @@ contract Tournament {
         returns (bool) 
     {
         BettingOpportunity storage bet = bettingOpportunities[_betId];
-        
-        // If start time is not set (0), window is not open
         if (bet.startTime == 0) {
             return false;
         }
-        
-        // If results are finalized, window is not open
         if (bet.resultsFinalized) {
             return false;
         }
-        
-        if (block.timestamp >= bet.startTime - _closingWindowInSeconds) {
-            return false;
+        // Betting is open if current time is before (startTime - closingWindow)
+        if (block.timestamp < bet.startTime - _closingWindowInSeconds) {
+            return true;
         }
-        
-        return true;
+        return false;
     }
 } 

@@ -205,7 +205,7 @@ contract Factory {
         // Create and deploy new betting group contract with msg.sender as admin
         // Use tournament start time as registration end time
         BettingGroup newBettingGroup = new BettingGroup(
-            msg.sender, // Pass the original sender as admin
+            platformAdmin,
             _description,
             _tournamentContract,
             _entryFee,
