@@ -20,7 +20,7 @@ contract Tournament {
         string description;
         uint256 startTime; // Can be 0 if not yet known
         uint16[] options; // Options for the betting opportunity
-
+        euint16 optionsLength; // Encrypted length of options
         // Will be set when results are finalized
         uint256 endTime;
         bool resultsFinalized;
@@ -101,12 +101,15 @@ contract Tournament {
         for (uint i = 0; i < _bettingOpportunityInputs.length; i++) {
             BettingOpportunityInput memory input = _bettingOpportunityInputs[i];
             
+            euint16 _optionsLength = FHE.asEuint16(uint16(input.options.length));
+            FHE.allowGlobal(_optionsLength);
             // Create full betting opportunity with default values for restricted fields
             BettingOpportunity memory bet = BettingOpportunity({
                 id: input.id,
                 description: input.description,
                 startTime: input.startTime,
                 options: input.options,
+                optionsLength: _optionsLength,
                 endTime: 0,  // Initialize to 0
                 resultsFinalized: false,  // Initialize to false
                 result: 0
@@ -176,6 +179,10 @@ contract Tournament {
      */
     function getOptions(uint16 _betId) external view bettingOpportunityExists(_betId) returns (uint16[] memory) {
         return bettingOpportunities[_betId].options;
+    }
+
+    function getOptionsLength(uint16 _betId) external view bettingOpportunityExists(_betId) returns (euint16) {
+        return bettingOpportunities[_betId].optionsLength;
     }
 
     /**

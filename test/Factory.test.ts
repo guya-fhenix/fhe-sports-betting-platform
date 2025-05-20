@@ -4,7 +4,7 @@ import { Signer, EventLog } from "ethers";
 import { Factory } from "../typechain-types";
 
 describe("Factory", function () {
-  let factory: Factory;
+  let factory: any; // Use any type for now to avoid typechain type errors
   let owner: Signer;
   let user: Signer;
   let addr1: string;
@@ -129,7 +129,7 @@ describe("Factory", function () {
     let startTime: number;
     let endTime: number;
     beforeEach(async () => {
-      startTime = Math.floor(Date.now() / 1000) + 100000;
+      startTime = Math.floor(Date.now() / 1000) + 100000; // far in the future for most tests
       endTime = startTime + 1000;
       bettingOpportunities = [
         {
@@ -220,16 +220,34 @@ describe("Factory", function () {
     });
 
     it("should revert if tournament has already started", async function () {
-      const Tournament = await ethers.getContractAt("Tournament", tournamentAddress);
-      const start = await Tournament.startTime();
-      const block = await ethers.provider.getBlock("latest");
-      if (!block) throw new Error("Failed to get latest block");
-      const now = block.timestamp;
-      const jump = Number(start) - now + 1;
-      await ethers.provider.send("evm_increaseTime", [jump]);
-      await ethers.provider.send("evm_mine", []);
+      // Create a tournament with a start time that's clearly in the past
+      const now = Math.floor(Date.now() / 1000);
+      const pastStart = now - 10000; // Way in the past
+      const pastEnd = now + 10000;
+      
+      // Set start time options to past values too
+      const pastBettingOpportunities = [
+        {
+          id: 1,
+          description: "Race 1",
+          startTime: pastStart + 100, // Also in the past
+          options: [1, 2, 3],
+        },
+      ];
+      
+      const tx = await factory.createTournament(
+        "Past Tournament",
+        pastStart,
+        pastEnd,
+        pastBettingOpportunities
+      );
+      
+      const receipt = await tx.wait();
+      const event = receipt?.logs?.find((e: any) => (e as EventLog).eventName === "TournamentCreated") as EventLog | undefined;
+      const pastTournament = event?.args?.tournamentAddress;
+
       await expect(
-        factory.createBettingGroup("desc", tournamentAddress, 1, [995], 60)
+        factory.createBettingGroup("desc", pastTournament, 1, [995], 60)
       ).to.be.revertedWith("Tournament has already started");
     });
   });

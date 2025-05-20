@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import "./Tournament.sol";
+import { InEuint16, InEuint32, InEuint256 } from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
 
 /**
  * @title BettingGroup
@@ -16,15 +17,14 @@ contract BettingGroup {
         address addr;
         string name;
         bool hasRegistered;
-        uint256 totalPoints;
+        euint256 totalPoints; // Encrypted total points
         mapping(uint16 => Bet) bets; // betId => Bet
     }
 
     struct Bet {
         bool placed;
-        uint16 predictedOption; // The predicted option for the bet
-        bool isScored;
-        uint256 pointsAwarded;
+        euint16 predictedOption; // Encrypted predicted option
+        euint256 pointsAwarded; // Encrypted points
     }
 
     struct Leaderboard {
@@ -37,6 +37,13 @@ contract BettingGroup {
     uint256 public constant PLATFORM_FEE_PERCENTAGE = 5; // 0.5% to platform
     uint256 public constant WINNER_DISTRIBUTION_PERCENTAGE = 995; // 99.5% to winners
     uint256 public constant MINIMUM_PARTICIPANTS = 10;
+
+    // FHE Constants
+    euint256 public ZERO;
+    euint16 public INVALID_PREDICTION;
+    
+    // Finalization and decryption state
+    bool public decryptionRequested;
     
     // Admins
     address public platformAdmin;
@@ -64,11 +71,12 @@ contract BettingGroup {
     mapping(uint16 => uint16) public actualResults; // betId => actual result
     uint16 public scoredBettingOpportunities;
     mapping(address => uint256) public claimableBalance;
+    mapping(address => uint256) public decryptedPoints;
     
     // Events
     event ParticipantRegistered(address indexed participant, string name);
     event ParticipantWithdrawn(address indexed participant);
-    event BetPlaced(address indexed participant, uint16 betId, uint16 predictedOption);
+    event BetPlaced(address indexed participant, uint16 betId);
     event BettingGroupFinalized();
     event BettingGroupCancelled();
     event ResultsProcessed(uint16 betId, uint16 result);
@@ -171,6 +179,13 @@ contract BettingGroup {
         // Initialize leaderboard
         leaderboard.finalized = false;
         leaderboard.finalizedTime = 0;
+        decryptionRequested = false;
+
+        // Initialize FHE constants
+        ZERO = FHE.asEuint256(0);
+        INVALID_PREDICTION = FHE.asEuint16(type(uint16).max);
+        FHE.allowThis(ZERO);
+        FHE.allowThis(INVALID_PREDICTION);    
     }
 
     /**
@@ -191,7 +206,7 @@ contract BettingGroup {
         participant.addr = msg.sender;
         participant.name = _name;
         participant.hasRegistered = true;
-        participant.totalPoints = 0;
+        participant.totalPoints = ZERO;
         participantAddresses.push(msg.sender);
         participantCount++;
         totalPrizePool += msg.value;
@@ -224,24 +239,33 @@ contract BettingGroup {
     /**
      * @notice Allows a registered participant to place a bet on a betting opportunity
      * @param _betId ID of the betting opportunity
-     * @param _predictedOption The predicted option for the bet
+     * @param _encryptedPredictedOption Encrypted predicted option for the bet (as InEuint16)
      */
-    function placeBet(uint16 _betId, uint16 _predictedOption) 
+    function placeBet(uint16 _betId, InEuint16 calldata _encryptedPredictedOption) 
         external 
         onlyRegisteredParticipant 
         bettingGroupActive
     {
-        // Check if betting window is open in tournament
         Tournament tournament = Tournament(tournamentContract);
         require(tournament.isBettingWindowOpen(_betId, generalClosingWindowInSeconds), "Betting window is closed");
-        // Get available options for this bet
-        uint16[] memory options = tournament.getOptions(_betId);
-        require(_predictedOption < options.length, "Invalid option selected");
+
+        // Get encrypted options length from Tournament
+        euint16 optionsLength = tournament.getOptionsLength(_betId);
+
         Participant storage participant = participants[msg.sender];
-        // Allow unlimited bets: just update the bet for this betId
         participant.bets[_betId].placed = true;
-        participant.bets[_betId].predictedOption = _predictedOption;
-        emit BetPlaced(msg.sender, _betId, _predictedOption);
+
+        // Convert user input to euint16
+        euint16 encryptedPredictedOption = FHE.asEuint16(_encryptedPredictedOption);
+        
+        // FHE conditional: if valid, store the bet; else, store INVALID_PREDICTION
+        ebool isValid = FHE.lt(encryptedPredictedOption, optionsLength);
+        participant.bets[_betId].predictedOption = FHE.select(isValid, encryptedPredictedOption, INVALID_PREDICTION);
+
+        FHE.allowThis(participant.bets[_betId].predictedOption);
+        FHE.allowSender(participant.bets[_betId].predictedOption);
+
+        emit BetPlaced(msg.sender, _betId);
     }
 
     /**
@@ -265,12 +289,12 @@ contract BettingGroup {
      * @notice Gets a participant's bet for a specific betting opportunity
      * @param _participant Address of the participant
      * @param _betId ID of the betting opportunity
-     * @return predictedOption The predicted option for the bet
+     * @return encryptedPredicted Encrypted predicted option for the bet
      */
     function getParticipantBet(address _participant, uint16 _betId) 
         external 
-        view 
-        returns (uint16)
+        view
+        returns (euint16)
     {
         require(participants[_participant].bets[_betId].placed, "Bet not placed");
         return participants[_participant].bets[_betId].predictedOption;
@@ -301,9 +325,9 @@ contract BettingGroup {
     /**
      * @notice Gets a participant's total points
      * @param _participant Address of the participant
-     * @return totalPoints Total points earned by the participant
+     * @return encryptedTotalPoints Encrypted total points earned by the participant
      */
-    function getParticipantPoints(address _participant) external view returns (uint256) {
+    function getParticipantPoints(address _participant) external view returns (euint256) {
         require(participants[_participant].hasRegistered, "Participant not registered");
         return participants[_participant].totalPoints;
     }
@@ -316,63 +340,42 @@ contract BettingGroup {
     function processResults(uint16 _betId) external onlyPlatformAdmin bettingGroupActive
     {
         require(participantCount >= MINIMUM_PARTICIPANTS, "Not enough participants");
-        // Verify results haven't been processed already
         require(!bettingOpportunityScored[_betId], "Results already processed");
-        
-        // Get tournament
         Tournament tournament = Tournament(tournamentContract);
-        
-        // Check if results are available
         uint16 result = tournament.getResults(_betId);
-        
-        // Store results
         actualResults[_betId] = result;
         bettingOpportunityScored[_betId] = true;
         scoredBettingOpportunities++;
-        
-        // Process all participant bets for this opportunity
         for (uint256 i = 0; i < participantAddresses.length; i++) {
             address participantAddr = participantAddresses[i];
             Participant storage participant = participants[participantAddr];
-            
-            // Skip if participant hasn't placed a bet for this opportunity
             if (!participant.bets[_betId].placed) {
                 continue;
             }
-            
-            // Get predicted option for this bet
-            uint16 predictedOption = participant.bets[_betId].predictedOption;
-            
-            // Calculate points for this bet
-            uint256 points = calculatePoints(predictedOption, result);
-
-            // Add points to participant
-            if (points > 0) {
-                participant.bets[_betId].isScored = true;
-                participant.bets[_betId].pointsAwarded = points;
-                participant.totalPoints += points;
-            } else {
-                participant.bets[_betId].isScored = false;
-            }
+            euint256 points = calculatePoints(participant.bets[_betId].predictedOption, result);
+            participant.bets[_betId].pointsAwarded = points;
+            participant.totalPoints = FHE.add(participant.totalPoints, points);
+            FHE.allowThis(participant.totalPoints);
+            FHE.allowSender(participant.totalPoints);
         }
-        
         emit ResultsProcessed(_betId, result);
     }
     
     /**
      * @notice Calculates points for a bet based on predicted vs actual result
-     * @param _predicted Predicted option
+     * @param _encryptedPredicted Encrypted predicted option
      * @param _actual Actual result
-     * @return Points earned for the bet
+     * @return Encrypted points earned for the bet
      */
     function calculatePoints(
-        uint16 _predicted,
+        euint16 _encryptedPredicted,
         uint16 _actual
-    ) internal pure returns (uint256) {
-        if (_predicted == _actual) {
-            return 1;
-        }
-        return 0;
+    ) internal returns (euint256) {
+        // Convert uint16 actual result to euint16 for comparison (same bit width)
+        euint16 encryptedActual = FHE.asEuint16(_actual);
+        ebool isCorrect = FHE.eq(_encryptedPredicted, encryptedActual);
+        // Return euint256(1) or euint256(0) as encrypted points (same bit width)
+        return FHE.select(isCorrect, FHE.asEuint256(1), FHE.asEuint256(0));
     }
     
     /**
@@ -380,40 +383,70 @@ contract BettingGroup {
      * @dev Sorts participants by total points (highest first)
      */
     function updateLeaderboard() internal {
-        // Create a memory array of all participants
-        address[] memory sortedParticipants = new address[](participantAddresses.length);
-        for (uint256 i = 0; i < participantAddresses.length; i++) {
+        uint256 n = participantAddresses.length;
+        address[] memory sortedParticipants = new address[](n);
+
+        // Copy addresses
+        for (uint256 i = 0; i < n; i++) {
             sortedParticipants[i] = participantAddresses[i];
         }
-        
-        // Sort by points (simple bubble sort)
-        for (uint256 i = 0; i < sortedParticipants.length; i++) {
-            for (uint256 j = i + 1; j < sortedParticipants.length; j++) {
-                if (participants[sortedParticipants[i]].totalPoints < participants[sortedParticipants[j]].totalPoints) {
-                    address temp = sortedParticipants[i];
-                    sortedParticipants[i] = sortedParticipants[j];
-                    sortedParticipants[j] = temp;
+
+        // Standard bubble sort using decryptedPoints
+        for (uint256 i = 0; i < n; i++) {
+            for (uint256 j = 0; j < n - 1; j++) {
+                address addrA = sortedParticipants[j];
+                address addrB = sortedParticipants[j + 1];
+                uint256 pointsA = decryptedPoints[addrA];
+                uint256 pointsB = decryptedPoints[addrB];
+                if (pointsB > pointsA) {
+                    // Swap
+                    address temp = sortedParticipants[j];
+                    sortedParticipants[j] = sortedParticipants[j + 1];
+                    sortedParticipants[j + 1] = temp;
                 }
             }
         }
-        
-        // Store in leaderboard
+
         leaderboard.participants = sortedParticipants;
-        
+        leaderboard.finalized = true;
+        leaderboard.finalizedTime = block.timestamp;
         emit LeaderboardSet();
     }
 
-    // External function for platform admin to finalize and distribute claimable balances
-    function finalizeAndDistribute() external onlyPlatformAdmin bettingGroupActive {
-        require(participantCount >= MINIMUM_PARTICIPANTS, "Not enough participants");
-        // Check if all betting opportunities have been scored
-        require(scoredBettingOpportunities == prizeDistribution.length, "Not all results processed");
+    // Check if decryption has been requested
+    function isDecryptionRequested() public view returns (bool) {
+        return decryptionRequested;
+    }
 
-        // Check if tournament has ended
+    // Stage 1: Request decryption of all participant points
+    function requestPointsDecryption() external onlyPlatformAdmin bettingGroupActive {
+        require(participantCount >= MINIMUM_PARTICIPANTS, "Not enough participants");
+        require(scoredBettingOpportunities == prizeDistribution.length, "Not all results processed");
         Tournament tournament = Tournament(tournamentContract);
         require(block.timestamp > tournament.endTime(), "Tournament has not ended");
 
-        // Update leaderboard
+        for (uint256 i = 0; i < participantAddresses.length; i++) {
+            address participantAddr = participantAddresses[i];
+            FHE.decrypt(participants[participantAddr].totalPoints);
+        }
+        decryptionRequested = true;
+    }
+
+    // Stage 2: Finalize and distribute after decryption is ready
+    function finalizeAndDistribute() external onlyPlatformAdmin bettingGroupActive {
+        require(participantCount >= MINIMUM_PARTICIPANTS, "Not enough participants");
+        require(decryptionRequested, "Decryption not requested");
+        require(active, "Already finalized");
+
+        // Check all points are decrypted and collect them
+        for (uint256 i = 0; i < participantAddresses.length; i++) {
+            address participantAddr = participantAddresses[i];
+            (uint256 points, bool ready) = FHE.getDecryptResultSafe(participants[participantAddr].totalPoints);
+            require(ready, "Decryption not ready for all participants");
+            decryptedPoints[participantAddr] = points;
+        }
+
+        // Sort participants by decryptedPoints (descending)
         updateLeaderboard();
 
         // Calculate platform fee
@@ -437,46 +470,22 @@ contract BettingGroup {
             claimableBalance[winner] += prize;
         }
 
-        leaderboard.finalized = true;
-        leaderboard.finalizedTime = block.timestamp;
         active = false;
         emit BettingGroupFinalized();
     }
 
-    /**
-     * @notice Gets the current leaderboard
-     * @return addresses Array of participant addresses sorted by points
-     * @return pointsArray Array of participant points
-     * @return finalized Whether the betting group is finalized
-     */
     function getLeaderboard() external view returns (
         address[] memory addresses,
-        uint256[] memory pointsArray,
-        bool finalized
+        uint256[] memory pointsArray
     ) {
-        // Use leaderboard participants if available, otherwise use unsorted list
-        if (leaderboard.participants.length > 0) {
-            addresses = leaderboard.participants;
-        } else {
-            addresses = new address[](participantCount);
-            for (uint i = 0; i < participantCount; i++) {
-                addresses[i] = participantAddresses[i];
-            }
-        }
-        
-        // Get points for each participant
+        require(leaderboard.finalized, "Leaderboard not finalized yet");
+
+        addresses = leaderboard.participants;
         pointsArray = new uint256[](addresses.length);
         for (uint256 i = 0; i < addresses.length; i++) {
-            address participantAddr = addresses[i];
-            if (participantAddr != address(0)) {
-                Participant storage participant = participants[participantAddr];
-                pointsArray[i] = participant.totalPoints;
-            } else {
-                pointsArray[i] = 0;
-            }
+            pointsArray[i] = decryptedPoints[addresses[i]];
         }
-        
-        return (addresses, pointsArray, leaderboard.finalized);
+        return (addresses, pointsArray);
     }
 
     function claim() external {
