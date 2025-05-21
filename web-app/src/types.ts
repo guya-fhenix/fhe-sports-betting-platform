@@ -2,44 +2,45 @@
 export interface Tournament {
   address: string;
   description: string;
-  start_time: number;
-  end_time: number;
-  betting_opportunities_count: number;
-  event_block?: number;
-  event_tx?: string;
+  startTime: number;
+  endTime: number;
+  bettingOpportunitiesCount: number;
+  eventBlock?: number;
+  eventTx?: string;
 }
 
 export interface BettingOpportunity {
   id: number;
   description: string;
+  startTime: number;
   options: string[];
 }
 
 export interface TournamentCreateInput {
   description: string;
-  start_time: number;
-  end_time: number;
-  betting_opportunities: BettingOpportunity[];
+  startTime: number;
+  endTime: number;
+  bettingOpportunities: BettingOpportunity[];
 }
 
 // Group types
 export interface Group {
   address: string;
   description: string;
-  tournament_address: string;
-  registration_end_time: number;
-  prize_distribution: number[];
-  general_closing_window: number;
-  event_block?: number;
-  event_tx?: string;
+  tournamentAddress: string;
+  registrationEndTime: number;
+  prizeDistribution: number[];
+  generalClosingWindow: number;
+  eventBlock?: number;
+  eventTx?: string;
 }
 
 export interface GroupCreateInput {
   description: string;
-  tournament_address: string;
-  entry_fee: number;
-  prize_distribution: number[];
-  general_closing_window: number;
+  tournamentAddress: string;
+  entryFee: number;
+  prizeDistribution: number[];
+  generalClosingWindow: number;
 }
 
 // Search types

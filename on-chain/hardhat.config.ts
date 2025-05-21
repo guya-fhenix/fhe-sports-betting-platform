@@ -2,6 +2,7 @@ import { HardhatUserConfig } from 'hardhat/config'
 import '@nomicfoundation/hardhat-toolbox'
 import '@nomicfoundation/hardhat-ethers'
 import 'cofhe-hardhat-plugin'
+import "@tenderly/hardhat-tenderly";
 import * as dotenv from 'dotenv'
 import './tasks'
 
@@ -56,7 +57,7 @@ const config: HardhatUserConfig = {
 			'eth-sepolia': process.env.ETHERSCAN_API_KEY || '',
 			'arb-sepolia': process.env.ARBISCAN_API_KEY || '',
 		},
-	},
+	}
 }
 
 export default config

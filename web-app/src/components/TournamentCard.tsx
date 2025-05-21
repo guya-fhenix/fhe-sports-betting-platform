@@ -4,8 +4,7 @@ import {
   Text,
   Badge,
   VStack,
-  HStack,
-  Button
+  HStack
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import type { Tournament } from '../types';
@@ -19,19 +18,43 @@ const TournamentCard = ({ tournament }: TournamentCardProps) => {
   
   // Format timestamp to readable date
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleString();
+    try {      
+      // Validate timestamp is a reasonable value
+      if (!timestamp || isNaN(timestamp) || timestamp <= 0) {
+        console.error(`Invalid timestamp value: ${timestamp}`);
+        return 'Invalid date';
+      }
+      
+      const date = new Date(timestamp * 1000);
+      
+      // Verify the date is valid
+      if (isNaN(date.getTime())) {
+        console.error(`Invalid date from timestamp: ${timestamp}`);
+        return 'Invalid date';
+      }
+      
+      return date.toLocaleString(undefined, { 
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error(`Error formatting date: ${error}`);
+      return 'Invalid date';
+    }
   };
   
   // Check if tournament is active
   const isActive = () => {
     const now = Math.floor(Date.now() / 1000);
-    return now >= tournament.start_time && now <= tournament.end_time;
+    return now >= tournament.startTime && now <= tournament.endTime;
   };
   
   // Check if tournament is upcoming
   const isUpcoming = () => {
     const now = Math.floor(Date.now() / 1000);
-    return now < tournament.start_time;
+    return now < tournament.startTime;
   };
   
   // Get status badge
@@ -45,66 +68,50 @@ const TournamentCard = ({ tournament }: TournamentCardProps) => {
     }
   };
   
+  const handleCardClick = () => {
+    navigate(`/tournaments/${tournament.address}`);
+  };
+  
   return (
     <Box
+      color="gray.800"
       borderWidth="1px"
       borderRadius="lg"
+      borderColor="gray.200"
       overflow="hidden"
-      p={4}
-      boxShadow="md"
+      p={3}
+      boxShadow="sm"
+      height="100%"
+      display="flex"
+      flexDirection="column"
+      cursor="pointer"
+      onClick={handleCardClick}
+      _hover={{
+        boxShadow: "md",
+        borderColor: "teal.300",
+        transform: "translateY(-2px)"
+      }}
+      transition="all 0.2s"
     >
-      <VStack align="start" gap={2}>
+      <VStack align="start" gap={1} flex="1">
         <HStack width="100%" justify="space-between">
-          <Heading size="md" truncate maxW="70%">
+          <Heading size="sm" maxW="80%" title={tournament.description} truncate>
             {tournament.description}
           </Heading>
           {getStatusBadge()}
         </HStack>
         
-        <Text fontSize="sm" color="gray.500">
-          Tournament ID: {tournament.address}
+        <Text fontSize="xs" maxW="100%" truncate>
+          {tournament.address}
         </Text>
         
-        <Text>
-          <Text as="span" fontWeight="bold">Start:</Text> {formatDate(tournament.start_time)}
+        <Text fontSize="sm">
+          <Text as="span" fontWeight="bold">Start:</Text> {formatDate(tournament.startTime)}
         </Text>
         
-        <Text>
-          <Text as="span" fontWeight="bold">End:</Text> {formatDate(tournament.end_time)}
+        <Text fontSize="sm">
+          <Text as="span" fontWeight="bold">End:</Text> {formatDate(tournament.endTime)}
         </Text>
-        
-        <Text>
-          <Text as="span" fontWeight="bold">Betting Opportunities:</Text> {tournament.betting_opportunities_count}
-        </Text>
-        
-        <HStack width="100%" pt={2}>
-          <Button
-            colorScheme="teal"
-            size="sm"
-            onClick={() => navigate(`/tournaments/${tournament.address}`)}
-          >
-            View Details
-          </Button>
-          
-          <Button
-            colorScheme="blue"
-            size="sm"
-            onClick={() => navigate(`/tournaments/${tournament.address}/groups`)}
-          >
-            View Groups
-          </Button>
-          
-          {isUpcoming() && (
-            <Button
-              colorScheme="green"
-              size="sm"
-              onClick={() => navigate(`/groups/create?tournament=${tournament.address}`)}
-              ml="auto"
-            >
-              Create Group
-            </Button>
-          )}
-        </HStack>
       </VStack>
     </Box>
   );

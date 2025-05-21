@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@chakra-ui/css-reset": "^2.3.0",
     "@chakra-ui/form-control": "^2.2.0",
     "@chakra-ui/react": "3.19.1",
     "@emotion/react": "^11.14.0",

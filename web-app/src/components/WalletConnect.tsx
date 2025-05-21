@@ -11,6 +11,7 @@ import {
 } from '@chakra-ui/react';
 import { ethers } from 'ethers';
 import { FiChevronDown, FiLogOut, FiCopy } from 'react-icons/fi';
+import { toaster } from '../components/ui/toaster';
 
 interface WalletConnectProps {
   onConnect: (provider: ethers.BrowserProvider) => void;
@@ -54,7 +55,10 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
 
   const connectWallet = async () => {
     if (!window.ethereum) {
-      alert('Please install a Web3 wallet like MetaMask');
+      toaster.error({
+        title: 'Wallet Error',
+        description: 'Please install a Web3 wallet like MetaMask'
+      });
       return;
     }
 
@@ -81,17 +85,62 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
       const provider = new ethers.BrowserProvider(window.ethereum);
       providerRef.current = provider;
       
-      // Request account access - this will prompt the user even if previously connected
-      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      // Request account access - this will prompt the user
+      // This will throw an error if user rejects/cancels
+      const accountsResult = await window.ethereum.request({ 
+        method: 'eth_requestAccounts' 
+      });
       
+      // Check if user rejected or no accounts returned
+      if (!accountsResult || accountsResult.length === 0) {
+        throw new Error('User rejected the connection request or no accounts returned');
+      }
+      
+      // Get the accounts using the provider to ensure we have the proper format
       const accounts = await provider.listAccounts();
+      
+      // Only proceed if we actually have accounts
+      if (accounts.length === 0) {
+        throw new Error('No accounts available after connection');
+      }
+      
+      // Set the connected account and provider
       setAccount(accounts[0].address);
       onConnect(provider);
       
-      alert('Wallet connected successfully');
-    } catch (error) {
+      toaster.success({
+        title: 'Wallet Connected',
+        description: 'Your wallet has been connected successfully'
+      });
+    } catch (error: any) {
       console.error('Error connecting wallet:', error);
-      alert('Failed to connect wallet');
+      
+      // Check for user rejection errors
+      const errorMessage = error?.message || '';
+      const isUserRejection = 
+        errorMessage.includes('rejected') || 
+        errorMessage.includes('cancelled') || 
+        errorMessage.includes('canceled') ||
+        errorMessage.includes('user denied');
+      
+      if (isUserRejection) {
+        toaster.info({
+          title: 'Connection Cancelled',
+          description: 'You cancelled the wallet connection request'
+        });
+        
+        // Ensure disconnected state is maintained
+        localStorage.setItem('wallet_disconnected', 'true');
+      } else {
+        toaster.error({
+          title: 'Connection Failed',
+          description: 'Failed to connect wallet'
+        });
+      }
+      
+      // Clear any partial connection state
+      setAccount(null);
+      providerRef.current = null;
     } finally {
       setConnecting(false);
     }
@@ -127,7 +176,10 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
       }
       
       // Notification
-      alert('Wallet disconnected');
+      toaster.info({
+        title: 'Wallet Disconnected',
+        description: 'Your wallet has been disconnected'
+      });
     } catch (error) {
       console.error('Error disconnecting wallet:', error);
     }
@@ -136,7 +188,9 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
   const copyAddress = () => {
     if (account) {
       navigator.clipboard.writeText(account);
-      alert('Address copied to clipboard');
+      toaster.info({
+        description: 'Address copied to clipboard'
+      });
     }
   };
 
@@ -148,10 +202,12 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
     <HStack gap={4}>
       {account ? (
         <Menu.Root positioning={{ placement: "bottom" }}>
-          <Menu.Trigger padding={0}>
-            <Button colorScheme="teal" color="white">
-              Wallet Connected <Icon ml={2}><FiChevronDown /></Icon>
-            </Button>
+          <Menu.Trigger asChild padding={0}>
+            <span>
+              <Button colorScheme="teal">
+                Wallet Connected <Icon ml={2}><FiChevronDown /></Icon>
+              </Button>
+            </span>
           </Menu.Trigger>
           <Portal>
             <Menu.Positioner>
@@ -178,7 +234,6 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
       ) : (
         <Button
           colorScheme="teal"
-          color="white"
           onClick={connectWallet}
           loading={connecting}
           loadingText="Connecting"

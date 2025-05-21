@@ -92,9 +92,9 @@
             "type": "uint256"
           },
           {
-            "internalType": "uint16[]",
+            "internalType": "string[]",
             "name": "options",
-            "type": "uint16[]"
+            "type": "string[]"
           }
         ],
         "indexed": false,
@@ -222,9 +222,9 @@
             "type": "uint256"
           },
           {
-            "internalType": "uint16[]",
+            "internalType": "string[]",
             "name": "options",
-            "type": "uint16[]"
+            "type": "string[]"
           }
         ],
         "internalType": "struct Tournament.BettingOpportunityInput[]",

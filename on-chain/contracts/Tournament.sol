@@ -12,14 +12,14 @@ contract Tournament {
         uint16 id;
         string description;
         uint256 startTime; // Can be 0 if not yet known
-        uint16[] options; // Options for the betting opportunity
+        string[] options; // Options for the betting opportunity
     }
 
     struct BettingOpportunity {
         uint16 id;
         string description;
         uint256 startTime; // Can be 0 if not yet known
-        uint16[] options; // Options for the betting opportunity
+        string[] options; // Options for the betting opportunity
         euint16 optionsLength; // Encrypted length of options
         // Will be set when results are finalized
         uint256 endTime;
@@ -34,6 +34,7 @@ contract Tournament {
     uint256 public endTime;
     
     mapping(uint16 => BettingOpportunity) public bettingOpportunities;
+    uint16[] private bettingOpportunityIds;
 
     // Events
     event BettingOpportunityStartTimeUpdated(uint16 id, uint256 startTime);
@@ -63,6 +64,14 @@ contract Tournament {
 
     modifier bettingOpportunityExists(uint16 _betId) {
         require(bettingOpportunities[_betId].id == _betId, "Betting opportunity does not exist");
+        _;
+    }
+
+    modifier onlyAfterTournamentStart() {
+        require(
+            block.timestamp > startTime,
+            "Tournament has not started"
+        );
         _;
     }
 
@@ -116,6 +125,7 @@ contract Tournament {
             });
             
             bettingOpportunities[bet.id] = bet;
+            bettingOpportunityIds.push(bet.id);
         }
     }
 
@@ -149,7 +159,7 @@ contract Tournament {
         uint16 _betId,
         uint16 _result,
         uint256 _endTime
-    ) external onlyPlatformAdmin bettingOpportunityExists(_betId) {
+    ) external onlyPlatformAdmin onlyAfterTournamentStart bettingOpportunityExists(_betId) {
         require(!bettingOpportunities[_betId].resultsFinalized, "Results already finalized");
         require(_endTime > 0, "End time must be greater than 0");
         
@@ -177,12 +187,20 @@ contract Tournament {
      * @param _betId The ID of the betting opportunity
      * @return Array of options for the betting opportunity
      */
-    function getOptions(uint16 _betId) external view bettingOpportunityExists(_betId) returns (uint16[] memory) {
+    function getOptions(uint16 _betId) external view bettingOpportunityExists(_betId) returns (string[] memory) {
         return bettingOpportunities[_betId].options;
     }
 
     function getOptionsLength(uint16 _betId) external view bettingOpportunityExists(_betId) returns (euint16) {
         return bettingOpportunities[_betId].optionsLength;
+    }
+
+    function getBettingOpportunities() external view returns (BettingOpportunity[] memory) {
+        BettingOpportunity[] memory bettingOpportunitiesArray = new BettingOpportunity[](bettingOpportunityIds.length);
+        for (uint i = 0; i < bettingOpportunityIds.length; i++) {
+            bettingOpportunitiesArray[i] = bettingOpportunities[bettingOpportunityIds[i]];
+        }
+        return bettingOpportunitiesArray;
     }
 
     /**
