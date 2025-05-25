@@ -20,6 +20,7 @@ import TournamentScreen from './components/TournamentScreen';
 import CreateTournament from './components/CreateTournament';
 import EventLog from './components/EventLog';
 import { Toaster } from './components/ui/toaster';
+import BettingGroupScreen from './components/BettingGroupScreen';
 
 interface OpenChangeEvent {
   open: boolean;
@@ -108,6 +109,7 @@ function App() {
             <Routes>
               <Route path="/" element={<TournamentSearch />} />
               <Route path="/tournaments/:address" element={<TournamentScreen />} />
+              <Route path="/tournaments/:tournamentAddress/groups/:groupAddress" element={<BettingGroupScreen />} />
               {/* Add more routes as needed */}
             </Routes>
           </Box>

@@ -89,4 +89,10 @@ export const searchGroups = async (query: string): Promise<Group[]> => {
 export const getTournamentGroups = async (tournamentAddress: string): Promise<Group[]> => {
   const response = await apiClient.get<any[]>(`/tournaments/${tournamentAddress}/groups`);
   return response.data.map(mapGroupResponse);
+};
+
+// User API calls
+export const getUserGroups = async (userAddress: string): Promise<Group[]> => {
+  const response = await apiClient.get<any>(`/user/${userAddress}/groups`);
+  return response.data.groups.map(mapGroupResponse);
 }; 

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="43fee14b-02d0-49ff-8a6b-e151d33d9786" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/cloud-service/abi/deployed-addresses.json" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/abi/deployed-addresses.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cloud-service/blockchain.py" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/blockchain.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cloud-service/db.py" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/cloud-service/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/contracts/BettingGroup.sol" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/contracts/BettingGroup.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/contracts/Tournament.sol" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/contracts/Tournament.sol" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/hardhat.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/hardhat.config.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/pnpm-lock.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/pnpm-lock.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/scripts/export-all.sh" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/scripts/export-all.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/App.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/abi/deployed-addresses.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/abi/deployed-addresses.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/components/CreateGroup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/CreateGroup.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/components/TournamentScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/TournamentScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/components/TournamentSearch.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/TournamentSearch.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/config.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/services/api.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/services/api.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/src/services/blockchain.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/services/blockchain.ts" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="2xOviaPhwH29EzzbaP7UWRE6ZuV" />
+  <component name="ProjectViewState">
+    <option name="autoscrollFromSource" value="true" />
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/guyaluk/Projects/fhe-sports-betting-platform&quot;
+  },
+  &quot;keyToStringList&quot;: {
+    &quot;DatabaseDriversLRU&quot;: [
+      &quot;redis&quot;
+    ]
+  }
+}</component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="43fee14b-02d0-49ff-8a6b-e151d33d9786" name="Changes" comment="" />
+      <created>1747822063228</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1747822063228</updated>
+    </task>
+    <servers />
+  </component>
+</project>

@@ -11,6 +11,22 @@ import "./BettingGroup.sol";
  */
 contract Factory {
 
+    // Custom Errors
+    error OnlyPlatformAdmin();
+    error ZeroAddress();
+    error EmptyDescription();
+    error InvalidTimeRange();
+    error NoBettingOpportunities();
+    error DuplicateBettingOpportunityId();
+    error NoOptionsProvided();
+    error AmountMustBeGreaterThanZero();
+    error InsufficientBalance();
+    error TournamentNotFromFactory();
+    error InvalidClosingWindow();
+    error TournamentAlreadyStarted();
+    error InvalidPrizeDistributionLength();
+    error InvalidPrizeDistributionTotal();
+
     // Events
     event TournamentCreated(
         address indexed tournamentAddress,
@@ -45,7 +61,7 @@ contract Factory {
     
     // Modifiers
     modifier onlyPlatformAdmin() {
-        require(msg.sender == platformAdmin, "Only platform admin can perform this action");
+        if (msg.sender != platformAdmin) revert OnlyPlatformAdmin();
         _;
     }
 
@@ -54,36 +70,17 @@ contract Factory {
      * @param _newAdmin New admin address
      */
     function setPlatformAdmin(address _newAdmin) external onlyPlatformAdmin {
-        require(_newAdmin != address(0), "New admin cannot be zero address");
+        if (_newAdmin == address(0)) revert ZeroAddress();
         platformAdmin = _newAdmin;
-    }
-    
-    /**
-     * @notice Gets the platform admin address
-     * @return Address of the platform admin
-     */
-    function getPlatformAdmin() external view returns (address) {
-        return platformAdmin;
-    }
-    
-    /**
-     * @notice Allows platform admin to withdraw all platform fees
-     */
-    function withdrawPlatformFees() external onlyPlatformAdmin {
-        uint256 amount = address(this).balance;
-        require(amount > 0, "No fees to withdraw");
-        
-        // Transfer fees to platform admin
-        payable(platformAdmin).transfer(amount);
     }
     
     /**
      * @notice Allows platform admin to withdraw a specific amount of platform fees
      * @param _amount Amount to withdraw
      */
-    function withdrawPartialFees(uint256 _amount) external onlyPlatformAdmin {
-        require(_amount > 0, "Amount must be greater than zero");
-        require(address(this).balance >= _amount, "Insufficient balance");
+    function withdrawFees(uint256 _amount) external onlyPlatformAdmin {
+        if (_amount == 0) revert AmountMustBeGreaterThanZero();
+        if (address(this).balance < _amount) revert InsufficientBalance();
         
         // Transfer specified amount to platform admin
         payable(platformAdmin).transfer(_amount);
@@ -118,9 +115,9 @@ contract Factory {
         Tournament.BettingOpportunityInput[] memory _bettingOpportunities
     ) external onlyPlatformAdmin returns (address) {
         // Parameter validation
-        require(bytes(_description).length > 0, "Description cannot be empty");
-        require(_startTime < _endTime, "End time must be after start time");
-        require(_bettingOpportunities.length > 0, "Must have at least one betting opportunity");
+        if (bytes(_description).length == 0) revert EmptyDescription();
+        if (_startTime >= _endTime) revert InvalidTimeRange();
+        if (_bettingOpportunities.length == 0) revert NoBettingOpportunities();
         
         // Validate betting opportunities - check for duplicate IDs
         for (uint i = 0; i < _bettingOpportunities.length; i++) {
@@ -129,11 +126,11 @@ contract Factory {
             
             // Check for duplicates by comparing with previous items
             for (uint j = 0; j < i; j++) {
-                require(_bettingOpportunities[j].id != idToCheck, "Duplicate betting opportunity ID");
+                if (_bettingOpportunities[j].id == idToCheck) revert DuplicateBettingOpportunityId();
             }
             
             // Validate options
-            require(bet.options.length > 0, "Must provide at least one option");
+            if (bet.options.length == 0) revert NoOptionsProvided();
         }
         
         // Deploy tournament contract with validated data
@@ -179,28 +176,28 @@ contract Factory {
         uint32 _generalClosingWindowInSeconds
     ) external returns (address) {
         // Parameter validation
-        require(bytes(_description).length > 0, "Description cannot be empty");
-        require(_tournamentContract != address(0), "Tournament contract cannot be zero address");
-        require(createdTournaments[_tournamentContract], "Tournament contract not created by this factory");
-        require(_generalClosingWindowInSeconds >= 60 && _generalClosingWindowInSeconds <= 86400, "General closing window must be between 1 minute and 1 day");
+        if (bytes(_description).length == 0) revert EmptyDescription();
+        if (_tournamentContract == address(0)) revert ZeroAddress();
+        if (!createdTournaments[_tournamentContract]) revert TournamentNotFromFactory();
+        if (_generalClosingWindowInSeconds < 60 || _generalClosingWindowInSeconds > 86400) revert InvalidClosingWindow();
         
         // Get tournament and its start time (which will be used as registration end time)
         Tournament tournament = Tournament(_tournamentContract);
         uint256 tournamentStartTime = tournament.startTime();
         
         // Ensure tournament hasn't started yet
-        require(block.timestamp < tournamentStartTime, "Tournament has already started");
+        if (block.timestamp >= tournamentStartTime) revert TournamentAlreadyStarted();
                 
         // Validate prize distribution
-        require(_prizeDistribution.length > 0, "Prize distribution must have at least one entry");
-        require(_prizeDistribution.length <= 10, "Prize distribution cannot exceed 10 entries");
+        if (_prizeDistribution.length == 0) revert InvalidPrizeDistributionLength();
+        if (_prizeDistribution.length > 10) revert InvalidPrizeDistributionLength();
         uint256 totalPercentage;
         for (uint256 i = 0; i < _prizeDistribution.length; i++) {
             totalPercentage += _prizeDistribution[i];
         }
 
         // 0.5% goes to platform
-        require(totalPercentage == 995, "Prize distribution must sum to 99.5% (995/1000)");
+        if (totalPercentage != 995) revert InvalidPrizeDistributionTotal();
         
         // Create and deploy new betting group contract with msg.sender as admin
         // Use tournament start time as registration end time
@@ -229,22 +226,6 @@ contract Factory {
         );
         
         return bettingGroupAddress;
-    }
-    
-    /**
-     * @notice Gets all tournaments created by this factory
-     * @return Array of tournament addresses
-     */
-    function getAllTournaments() external view returns (address[] memory) {
-        return allTournaments;
-    }
-    
-    /**
-     * @notice Gets all betting groups created by this factory
-     * @return Array of betting group addresses
-     */
-    function getAllBettingGroups() external view returns (address[] memory) {
-        return allBettingGroups;
     }
     
     /**

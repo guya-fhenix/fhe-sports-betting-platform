@@ -25,3 +25,9 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localho
 // This will be imported at build time
 import FactoryABI from './abi/factory-abi.json';
 export const FACTORY_ABI = FactoryABI; 
+
+// Import the Tournament and BettingGroup ABIs
+import TournamentABI from './abi/tournament-abi.json';
+import BettingGroupABI from './abi/bettinggroup-abi.json';
+export const TOURNAMENT_ABI = TournamentABI;
+export const BETTING_GROUP_ABI = BettingGroupABI; 

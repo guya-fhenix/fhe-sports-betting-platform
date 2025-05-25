@@ -10,9 +10,11 @@ echo "Exporting contract data for network: $NETWORK"
 # Change to the scripts directory
 cd "$(dirname "$0")"
 
-# Export ABI
+# Export ABIs
 echo "Exporting contract ABIs..."
 npx ts-node export-abi.ts
+npx ts-node export-tournament-abi.ts
+npx ts-node export-bettinggroup-abi.ts
 
 # Export deployed addresses
 echo "Exporting deployed addresses for $NETWORK..."
@@ -23,8 +25,12 @@ echo ""
 echo "You can now use the exported contract ABI and addresses in your applications."
 echo "The following files have been created:"
 echo "  - web-app/src/abi/factory-abi.json"
+echo "  - web-app/src/abi/tournament-abi.json"
+echo "  - web-app/src/abi/bettinggroup-abi.json"
 echo "  - web-app/src/abi/deployed-addresses.json"
 echo "  - cloud-service/abi/factory-abi.json"
+echo "  - cloud-service/abi/tournament-abi.json"
+echo "  - cloud-service/abi/bettinggroup-abi.json"
 echo "  - cloud-service/abi/deployed-addresses.json"
 echo ""
 echo "Environment files have also been created:"

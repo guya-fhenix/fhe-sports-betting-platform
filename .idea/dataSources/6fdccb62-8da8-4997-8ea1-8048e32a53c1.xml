@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataSource name="0@localhost">
+  <database-model serializer="dbm" dbms="REDIS" family-id="REDIS" format-version="4.53">
+    <root id="1">
+      <ServerVersion>7.4.2</ServerVersion>
+    </root>
+    <schema id="2" parent="1" name="0">
+      <Current>1</Current>
+    </schema>
+    <schema id="3" parent="1" name="1"/>
+    <schema id="4" parent="1" name="10"/>
+    <schema id="5" parent="1" name="11"/>
+    <schema id="6" parent="1" name="12"/>
+    <schema id="7" parent="1" name="13"/>
+    <schema id="8" parent="1" name="14"/>
+    <schema id="9" parent="1" name="15"/>
+    <schema id="10" parent="1" name="2"/>
+    <schema id="11" parent="1" name="3"/>
+    <schema id="12" parent="1" name="4"/>
+    <schema id="13" parent="1" name="5"/>
+    <schema id="14" parent="1" name="6"/>
+    <schema id="15" parent="1" name="7"/>
+    <schema id="16" parent="1" name="8"/>
+    <schema id="17" parent="1" name="9"/>
+    <hash-table id="18" parent="2" name="group:0xb0279Db6a2F1E01fbC8483FCCef0Be2bC6299cC3"/>
+    <hash-table id="19" parent="2" name="tournament:0x856e4424f806D16E8CBC702B3c0F2ede5468eae5"/>
+    <set id="20" parent="2" name="group:word:fhenix"/>
+    <set id="21" parent="2" name="group_index"/>
+    <set id="22" parent="2" name="tournament:0x856e4424f806D16E8CBC702B3c0F2ede5468eae5:groups"/>
+    <set id="23" parent="2" name="tournament:word:cup"/>
+    <set id="24" parent="2" name="tournament:word:world"/>
+    <set id="25" parent="2" name="tournament_index"/>
+    <string id="26" parent="2" name="blockchain:last_processed_block"/>
+  </database-model>
+</dataSource>

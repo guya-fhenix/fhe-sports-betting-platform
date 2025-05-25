@@ -5,12 +5,15 @@ import {
   Text,
   VStack,
   Input,
-  Heading
+  Heading,
+  HStack,
+  Icon
 } from '@chakra-ui/react';
 import { ethers } from 'ethers';
 import { createBettingGroup } from '../services/blockchain';
 import type { Tournament } from '../types';
 import { toaster } from './ui/toaster';
+import { FiPlus, FiTrash2 } from 'react-icons/fi';
 
 interface CreateGroupProps {
   provider: ethers.BrowserProvider | null;
@@ -21,9 +24,9 @@ interface CreateGroupProps {
 const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [description, setDescription] = useState('');
-  const [registrationEndDateValue, setRegistrationEndDateValue] = useState('');
-  const [prizeDistValues, setPrizeDistValues] = useState<number[]>([70, 30, 0]);
-  const [generalClosingWindow, setGeneralClosingWindow] = useState(3600); // 1 hour in seconds
+  const [entryFee, setEntryFee] = useState('0.01'); // Default entry fee in ETH
+  const [prizeDistValues, setPrizeDistValues] = useState<number[]>([99.5]); // Default to one place with 99.5%
+  const [generalClosingWindowMinutes, setGeneralClosingWindowMinutes] = useState(60); // 1 hour in minutes
   
   const handlePrizeDistChange = (index: number, value: number) => {
     const newValues = [...prizeDistValues];
@@ -33,6 +36,20 @@ const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
   
   const getTotalPrizeDist = () => {
     return prizeDistValues.reduce((acc, val) => acc + val, 0);
+  };
+
+  const addPrizePlace = () => {
+    setPrizeDistValues([...prizeDistValues, 0]);
+  };
+
+  const removePrizePlace = (index: number) => {
+    if (prizeDistValues.length <= 1) {
+      // Always keep at least one prize place
+      return;
+    }
+    const newValues = [...prizeDistValues];
+    newValues.splice(index, 1);
+    setPrizeDistValues(newValues);
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,37 +79,36 @@ const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
       });
       return;
     }
+
+    // Ensure we have at least one prize place
+    if (prizeDistValues.length < 1) {
+      toaster.error({
+        title: 'Invalid Prize Distribution',
+        description: 'You must have at least one prize place'
+      });
+      return;
+    }
     
-    // Process registration end time
-    let registrationEndTime = 0;
+    // Validate entry fee
     try {
-      if (registrationEndDateValue) {
-        const registrationEndDate = new Date(registrationEndDateValue);
-        if (isNaN(registrationEndDate.getTime())) {
-          throw new Error('Invalid registration end time format');
-        }
-        registrationEndTime = Math.floor(registrationEndDate.getTime() / 1000);
-      } else {
-        throw new Error('Registration end time is required');
+      // Parse entry fee to check if it's valid
+      const entryFeeEth = parseFloat(entryFee);
+      if (isNaN(entryFeeEth) || entryFeeEth <= 0) {
+        throw new Error('Entry fee must be greater than 0');
       }
     } catch (error) {
-      console.error('Error processing date:', error);
+      console.error('Error processing entry fee:', error);
       toaster.error({
-        title: 'Invalid Date Format',
-        description: 'Please select a valid registration end time'
+        title: 'Invalid Entry Fee',
+        description: error instanceof Error ? error.message : 'Please enter a valid entry fee amount'
       });
       return;
     }
     
     setIsSubmitting(true);
     
-    // Prepare data for the contract call
-    const data = {
-      description,
-      registrationEndTime,
-      prizeDistribution: prizeDistValues,
-      generalClosingWindow
-    };
+    // Convert minutes to seconds for the contract
+    const generalClosingWindowSeconds = generalClosingWindowMinutes * 60;
     
     // Show loading toast
     const loadingToastId = toaster.create({
@@ -102,8 +118,22 @@ const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
     });
 
     try {
-      console.log('Creating betting group with data:', data);
-      const groupAddress = await createBettingGroup(provider, tournament.address, data);
+      console.log(`Creating betting group with entry fee: ${entryFee} ETH`);
+      console.log(`Prize distribution (decimal): ${prizeDistValues.join(', ')}%`);
+      
+      // Call createBettingGroup with the required parameters
+      // Note: The service will convert decimal percentages (99.5) to integers (995) for the contract
+      const groupAddress = await createBettingGroup(
+        provider, 
+        tournament.address, 
+        {
+          description,
+          registrationEndTime: tournament.startTime, // Use tournament start time
+          prizeDistribution: prizeDistValues, // Decimal percentages (e.g., 99.5, 70.0, 29.5)
+          generalClosingWindow: generalClosingWindowSeconds,
+          entryFee // Pass the entry fee to the blockchain service
+        }
+      );
       
       // Call success callback
       if (onSuccess) {
@@ -159,76 +189,93 @@ const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
           <Box borderTop="1px" borderColor="gray.200" pt={4} />
           
           <Box>
-            <Text mb={2}>Registration End Time</Text>
-            <Input 
-              type="datetime-local" 
-              value={registrationEndDateValue}
-              onChange={(e) => setRegistrationEndDateValue(e.target.value)}
-              required
-            />
-            <Text fontSize="sm" color="gray.500">
-              After this time, users cannot join the betting group
+            <Text mb={2}>Entry Fee (ETH)</Text>
+            <HStack>
+              <Input 
+                type="number"
+                min="0.0001"
+                step="0.001"
+                value={entryFee}
+                onChange={(e) => setEntryFee(e.target.value)}
+                required
+              />
+              <Text fontWeight="bold" ml={2}>ETH</Text>
+            </HStack>
+            <Text fontSize="sm" color="gray.500" mt={1}>
+              Amount each participant must pay to join the betting group
             </Text>
           </Box>
           
           <Box>
-            <Text mb={2}>General Closing Window (seconds)</Text>
+            <Text mb={2}>General Closing Window (minutes)</Text>
             <Input 
               type="number"
-              min={60}
-              value={generalClosingWindow}
-              onChange={(e) => setGeneralClosingWindow(parseInt(e.target.value) || 3600)}
+              min={1}
+              max={1440} // 24 hours in minutes
+              value={generalClosingWindowMinutes}
+              onChange={(e) => setGeneralClosingWindowMinutes(parseInt(e.target.value) || 60)}
               required
             />
             <Text fontSize="sm" color="gray.500">
-              Time before tournament end when all bets are automatically closed
+              Time before tournament end when all bets are automatically closed (1-1440 minutes)
             </Text>
           </Box>
           
           <Box>
-            <Heading size="sm" mb={2}>Prize Distribution (%)</Heading>
+            <HStack justify="space-between" mb={2}>
+              <Heading size="sm">Prize Distribution (%)</Heading>
+              <Button 
+                size="sm" 
+                onClick={addPrizePlace}
+                colorScheme="teal"
+                variant="outline"
+              >
+                <Icon as={FiPlus} mr={2} />
+                Add Place
+              </Button>
+            </HStack>
+            
             <Text 
               fontSize="sm" 
               color={getTotalPrizeDist() === 99.5 ? "green.500" : "red.500"} 
               mb={2}
+              fontWeight="bold"
             >
               Total: {getTotalPrizeDist()}% {getTotalPrizeDist() !== 99.5 && '(must equal 99.5%)'}
             </Text>
             
             <VStack gap={3} align="stretch">
-              <Box>
-                <Text fontSize="sm">1st Place</Text>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={prizeDistValues[0]}
-                  onChange={(e) => handlePrizeDistChange(0, parseInt(e.target.value) || 0)}
-                />
-              </Box>
-              
-              <Box>
-                <Text fontSize="sm">2nd Place</Text>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={prizeDistValues[1]}
-                  onChange={(e) => handlePrizeDistChange(1, parseInt(e.target.value) || 0)}
-                />
-              </Box>
-              
-              <Box>
-                <Text fontSize="sm">3rd Place</Text>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={prizeDistValues[2]}
-                  onChange={(e) => handlePrizeDistChange(2, parseInt(e.target.value) || 0)}
-                />
-              </Box>
+              {prizeDistValues.map((value, index) => (
+                <HStack key={index}>
+                  <Box flex="1">
+                    <Text fontSize="sm">{index + 1}{getOrdinal(index + 1)} Place</Text>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={value}
+                      onChange={(e) => handlePrizeDistChange(index, parseFloat(e.target.value) || 0)}
+                    />
+                  </Box>
+                  {prizeDistValues.length > 1 && (
+                    <Button 
+                      colorScheme="red" 
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removePrizePlace(index)}
+                      aria-label={`Remove ${index + 1}${getOrdinal(index + 1)} place`}
+                    >
+                      <Icon as={FiTrash2} />
+                    </Button>
+                  )}
+                </HStack>
+              ))}
             </VStack>
+            
+            <Text fontSize="xs" color="gray.500" mt={2}>
+              Note: 0.5% is reserved as platform fee
+            </Text>
           </Box>
           
           <Button
@@ -250,6 +297,13 @@ const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
       </form>
     </Box>
   );
+};
+
+// Helper function to get ordinal suffix
+const getOrdinal = (n: number): string => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
 };
 
 export default CreateGroup; 

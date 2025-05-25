@@ -12,6 +12,26 @@ import { InEuint16, InEuint32, InEuint256 } from "@fhenixprotocol/cofhe-contract
  */
 contract BettingGroup {
 
+    // Custom Errors
+    error OnlyPlatformAdmin();
+    error ZeroAddress();
+    error OnlyRegisteredParticipants();
+    error BettingGroupNotActive();
+    error TournamentNotEnded();
+    error TournamentEnded();
+    error TournamentStarted();
+    error AlreadyRegistered();
+    error IncorrectEntryFee();
+    error NameAlreadyTaken();
+    error BettingWindowClosed();
+    error TournamentNotStarted();
+    error MinimumParticipantsMet();
+    error ParticipantNotRegistered();
+    error NotEnoughParticipants();
+    error ResultsAlreadyProcessed();
+    error DecryptionNotRequested();
+    error DecryptionNotReady();
+
     // Structs
     struct Participant {
         address addr;
@@ -25,6 +45,13 @@ contract BettingGroup {
         bool placed;
         euint16 predictedOption; // Encrypted predicted option
         euint256 pointsAwarded; // Encrypted points
+    }
+
+    // Simplified struct for returning bet data
+    struct BetInfo {
+        bool placed;
+        bool scored;
+        uint16 result; // Only valid if scored is true
     }
 
     struct Leaderboard {
@@ -85,7 +112,7 @@ contract BettingGroup {
 
     // Modifiers
     modifier onlyPlatformAdmin() {
-        require(msg.sender == platformAdmin, "Only platform admin can perform this action");
+        if (msg.sender != platformAdmin) revert OnlyPlatformAdmin();
         _;
     }
 
@@ -94,7 +121,7 @@ contract BettingGroup {
      * @param _newAdmin New admin address
      */
     function setPlatformAdmin(address _newAdmin) external onlyPlatformAdmin {
-        require(_newAdmin != address(0), "New admin cannot be zero address");
+        if (_newAdmin == address(0)) revert ZeroAddress();
         platformAdmin = _newAdmin;
     }
     
@@ -107,42 +134,33 @@ contract BettingGroup {
     }
 
     modifier onlyRegisteredParticipant() {
-        require(participants[msg.sender].hasRegistered, "Only registered participants can perform this action");
+        if (!participants[msg.sender].hasRegistered) revert OnlyRegisteredParticipants();
         _;
     }
 
     modifier bettingGroupActive() {
-        require(active, "Betting group is not active");
+        if (!active) revert BettingGroupNotActive();
         _;
     }
 
     modifier onlyAfterTournamentEnd() {
         // Registration is open until tournament ends
         Tournament tournament = Tournament(tournamentContract);
-        require(
-            block.timestamp > tournament.endTime(),
-            "Tournament has not ended"
-        );   
+        if (block.timestamp <= tournament.endTime()) revert TournamentNotEnded();
         _;
     }
 
     modifier onlyBeforeTournamentEnd() {
         // Registration is open until tournament ends
         Tournament tournament = Tournament(tournamentContract);
-        require(
-            block.timestamp < tournament.endTime(),
-            "Tournament has ended"
-        );   
+        if (block.timestamp >= tournament.endTime()) revert TournamentEnded();
         _;
     }
 
     modifier onlyBeforeTournamentStart() {
         // Unregistration is only open until tournament starts
         Tournament tournament = Tournament(tournamentContract);
-        require(
-            block.timestamp < tournament.startTime(),
-            "Tournament has started"
-        );
+        if (block.timestamp >= tournament.startTime()) revert TournamentStarted();
         _;
     }
 
@@ -189,25 +207,50 @@ contract BettingGroup {
     }
 
     /**
+     * @notice Checks if a participant is registered
+     * @param _participant Address to check
+     * @return true if the participant is registered, otherwise false
+     */
+    function isRegistered(address _participant) external view returns (bool) {
+        return participants[_participant].hasRegistered;
+    }
+
+    /**
      * @notice Allows a participant to register for the betting group by paying the entry fee
      * @param _name Name of the participant
      */
     function register(string memory _name) external payable onlyBeforeTournamentEnd bettingGroupActive {
-        require(!participants[msg.sender].hasRegistered, "Already registered");
-        require(msg.value == entryFee, "Incorrect entry fee");
+        if (participants[msg.sender].hasRegistered) revert AlreadyRegistered();
+        if (msg.value != entryFee) revert IncorrectEntryFee();
+        
         // Ensure name is unique among registered participants
         for (uint256 i = 0; i < participantAddresses.length; i++) {
             address addr = participantAddresses[i];
             if (participants[addr].hasRegistered && keccak256(bytes(participants[addr].name)) == keccak256(bytes(_name))) {
-                revert("Name already taken");
+                revert NameAlreadyTaken();
             }
         }
+        
         Participant storage participant = participants[msg.sender];
         participant.addr = msg.sender;
         participant.name = _name;
         participant.hasRegistered = true;
         participant.totalPoints = ZERO;
-        participantAddresses.push(msg.sender);
+        
+        // Check if address is already in participantAddresses (for users who withdrew and registered again)
+        bool addressFound = false;
+        for (uint256 i = 0; i < participantAddresses.length; i++) {
+            if (participantAddresses[i] == msg.sender) {
+                addressFound = true;
+                break;
+            }
+        }
+        
+        // Only add to array if not already there
+        if (!addressFound) {
+            participantAddresses.push(msg.sender);
+        }
+        
         participantCount++;
         totalPrizePool += msg.value;
         emit ParticipantRegistered(msg.sender, _name);
@@ -226,11 +269,26 @@ contract BettingGroup {
         // Process withdrawal
         address payable participantAddress = payable(msg.sender);
         uint256 refundAmount = entryFee;
+        
         // Update betting group state
         Participant storage participant = participants[msg.sender];
+        
+        // First, clean all bet data
+        Tournament tournament = Tournament(tournamentContract);
+        uint16 opportunityCount = tournament.getBettingOpportunitiesCount();
+        for (uint16 i = 0; i < opportunityCount; i++) {
+            if (participant.bets[i].placed) {
+                // Reset the bet data
+                participant.bets[i].placed = false;
+            }
+        }
+        
+        // Reset participant data
         participant.hasRegistered = false;
+        participant.totalPoints = ZERO;
         participantCount--;
         totalPrizePool -= refundAmount;
+        
         // Transfer the entry fee back to the participant
         participantAddress.transfer(refundAmount);
         emit ParticipantWithdrawn(msg.sender);
@@ -247,7 +305,7 @@ contract BettingGroup {
         bettingGroupActive
     {
         Tournament tournament = Tournament(tournamentContract);
-        require(tournament.isBettingWindowOpen(_betId, generalClosingWindowInSeconds), "Betting window is closed");
+        if (!tournament.isBettingWindowOpen(_betId, generalClosingWindowInSeconds)) revert BettingWindowClosed();
 
         // Get encrypted options length from Tournament
         euint16 optionsLength = tournament.getOptionsLength(_betId);
@@ -273,8 +331,8 @@ contract BettingGroup {
      */
     function cancelBettingGroup() external bettingGroupActive onlyRegisteredParticipant {
         Tournament tournament = Tournament(tournamentContract);
-        require(block.timestamp >= tournament.startTime(), "Tournament has not started");
-        require(participantCount < MINIMUM_PARTICIPANTS, "Minimum participants met");
+        if (block.timestamp < tournament.startTime()) revert TournamentNotStarted();
+        if (participantCount >= MINIMUM_PARTICIPANTS) revert MinimumParticipantsMet();
         active = false;
         for (uint256 i = 0; i < participantAddresses.length; i++) {
             address participant = participantAddresses[i];
@@ -286,32 +344,55 @@ contract BettingGroup {
     }
 
     /**
-     * @notice Gets a participant's bet for a specific betting opportunity
-     * @param _participant Address of the participant
-     * @param _betId ID of the betting opportunity
-     * @return encryptedPredicted Encrypted predicted option for the bet
+     * @notice Checks if the betting group is active
+     * @return true if the betting group is active, otherwise false
      */
-    function getParticipantBet(address _participant, uint16 _betId) 
-        external 
-        view
-        returns (euint16)
-    {
-        require(participants[_participant].bets[_betId].placed, "Bet not placed");
-        return participants[_participant].bets[_betId].predictedOption;
+    function isActive() external view returns (bool) {
+        return active;
     }
 
     /**
-     * @notice Gets whether a participant has placed a bet for a specific betting opportunity
-     * @param _participant Address of the participant
-     * @param _betId ID of the betting opportunity
-     * @return true if the participant has placed a bet for the given betId, otherwise false
+     * @notice Gets all betting information for the caller
+     * @return betIds Array of bet IDs that the caller has placed
+     * @return betsInfo Array of bet information for placed bets
      */
-    function getParticipantHasBet(address _participant, uint16 _betId)
+    function getParticipantBets()
         external
         view
-        returns (bool)
+        returns (
+            uint16[] memory betIds,
+            Bet[] memory betsInfo
+        )
     {
-        return participants[_participant].bets[_betId].placed;
+        if (!participants[msg.sender].hasRegistered) revert ParticipantNotRegistered();
+        
+        // Get the number of betting opportunities from the tournament
+        Tournament tournament = Tournament(tournamentContract);
+        uint16 opportunityCount = tournament.getBettingOpportunitiesCount();
+        
+        // First, count how many bets this participant has placed
+        uint16 placedCount = 0;
+        for (uint16 i = 0; i < opportunityCount; i++) {
+            if (participants[msg.sender].bets[i].placed) {
+                placedCount++;
+            }
+        }
+        
+        // Initialize arrays with the size of placed bets only
+        betIds = new uint16[](placedCount);
+        betsInfo = new Bet[](placedCount);
+        
+        // Fill arrays only with placed bets
+        uint16 index = 0;
+        for (uint16 i = 0; i < opportunityCount; i++) {
+            if (participants[msg.sender].bets[i].placed) {
+                betIds[index] = i;
+                betsInfo[index] = participants[msg.sender].bets[i];
+                index++;
+            }
+        }
+        
+        return (betIds, betsInfo);
     }
 
     /**
@@ -327,8 +408,8 @@ contract BettingGroup {
      * @param _participant Address of the participant
      * @return encryptedTotalPoints Encrypted total points earned by the participant
      */
-    function getParticipantPoints(address _participant) external view returns (euint256) {
-        require(participants[_participant].hasRegistered, "Participant not registered");
+    function getParticipantTotalPoints(address _participant) external view returns (euint256) {
+        if (!participants[_participant].hasRegistered) revert ParticipantNotRegistered();
         return participants[_participant].totalPoints;
     }
 
@@ -339,8 +420,8 @@ contract BettingGroup {
      */
     function processResults(uint16 _betId) external onlyPlatformAdmin bettingGroupActive
     {
-        require(participantCount >= MINIMUM_PARTICIPANTS, "Not enough participants");
-        require(!bettingOpportunityScored[_betId], "Results already processed");
+        if (participantCount < MINIMUM_PARTICIPANTS) revert NotEnoughParticipants();
+        if (bettingOpportunityScored[_betId]) revert ResultsAlreadyProcessed();
         Tournament tournament = Tournament(tournamentContract);
         uint16 result = tournament.getResults(_betId);
         actualResults[_betId] = result;

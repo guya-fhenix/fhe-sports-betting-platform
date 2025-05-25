@@ -2,8 +2,8 @@ import { HardhatUserConfig } from 'hardhat/config'
 import '@nomicfoundation/hardhat-toolbox'
 import '@nomicfoundation/hardhat-ethers'
 import 'cofhe-hardhat-plugin'
-import "@tenderly/hardhat-tenderly";
 import * as dotenv from 'dotenv'
+import 'hardhat-contract-sizer';
 import './tasks'
 
 dotenv.config()
@@ -25,10 +25,8 @@ const config: HardhatUserConfig = {
 	// defaultNetwork: 'localcofhe',
 	networks: {
 		// The plugin already provides localcofhe configuration
-		hardhat: {
-			// Increase the contract size limit for testing
-			allowUnlimitedContractSize: true,
-		},
+
+		hardhat: { hardfork: "cancun" },
 
 		// Sepolia testnet configuration
 		'eth-sepolia': {
@@ -50,6 +48,8 @@ const config: HardhatUserConfig = {
 			httpHeaders: {},
 		},
 	},
+
+	contractSizer: { runOnCompile: true, strict: true },
 
 	// Optional: Add Etherscan verification config
 	etherscan: {

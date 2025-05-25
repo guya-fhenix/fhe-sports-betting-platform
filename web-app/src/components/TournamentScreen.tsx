@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -12,24 +12,24 @@ import {
   Spinner,
   Text,
   VStack,
-  Drawer
+  Drawer,
+  Input,
+  Dialog
 } from '@chakra-ui/react';
-import { FiPlus, FiArrowLeft, FiX, FiRefreshCw, FiClock, FiCalendar, FiTerminal } from 'react-icons/fi';
+import { FiPlus, FiArrowLeft, FiX, FiRefreshCw, FiClock, FiCalendar, FiCheck } from 'react-icons/fi';
 import { getTournamentByAddress, getTournamentGroups } from '../services/api';
 import { ethers } from 'ethers';
 import type { Tournament, Group } from '../types';
 import CreateGroup from './CreateGroup';
 import { toaster } from './ui/toaster';
-
-// Tournament ABI
-const TOURNAMENT_ABI = [
-  "function getBettingOpportunities() view returns (tuple(uint16 id, string description, uint256 startTime, string[] options, uint256 endTime, bool resultsFinalized, uint16 result)[])",
-  "function setResults(uint16 _betId, uint16 _result, uint256 _endTime) external",
-  "function updateBettingOpportunityStartTime(uint16 _betId, uint256 _startTime) external"
-];
-
-// Current ETH price in USD (would be better to fetch from an API)
-const ETH_PRICE_USD = 3500;
+import { TOURNAMENT_ABI } from '../config';
+import { 
+  formatBlockchainDateToLocal, 
+  convertLocalDateToBlockchainTime, 
+  getCurrentBlockchainTime,
+  isTimestampInFuture,
+  formatDateForLocalInput
+} from '../utils/time';
 
 const TournamentScreen = () => {
   const navigate = useNavigate();
@@ -41,6 +41,7 @@ const TournamentScreen = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [bettingOpportunities, setBettingOpportunities] = useState<any[]>([]);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
+  const [ethPriceUsd, setEthPriceUsd] = useState(3500); // Default fallback value
   
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -50,7 +51,6 @@ const TournamentScreen = () => {
     description: string,
     option: string
   } | null>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
   
   // Use ref to stabilize provider reference
   const providerRef = useRef<ethers.BrowserProvider | null>(null);
@@ -63,63 +63,28 @@ const TournamentScreen = () => {
     providerRef.current = drawerContext.provider;
   }
   
-  // Fetch tournament data
-  useEffect(() => {
-    fetchTournament();
-  }, [address]);
-  
-  // Fetch betting opportunities just once on initial load
-  useEffect(() => {
-    if (tournament && providerRef.current) {
-      fetchBettingOpportunities();
-    }
-  }, [tournament?.address]);
-  
-  // Fetch groups with polling
-  useEffect(() => {
-    if (!address) return;
-    
-    // Initial fetch
-    fetchGroups();
-    
-    // Set up polling interval (every 5 seconds)
-    const intervalId = setInterval(() => {
-      fetchGroups();
-    }, 5000);
-    
-    // Clean up interval on unmount
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [address]);
-  
-  const fetchTournament = useCallback(async () => {
-    if (!address) return;
-    
-    try {
-      const data = await getTournamentByAddress(address);
-      setTournament(data);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching tournament:', error);
-      setLoading(false);
-    }
-  }, [address]);
+  // Date picker state
+  const [selectedBetId, setSelectedBetId] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Improved fetchBettingOpportunities with better debugging
-  const fetchBettingOpportunities = useCallback(async () => {
-    if (!providerRef.current || !tournament) {
+  const fetchBettingOpportunities = useCallback(async (tournamentData?: Tournament) => {
+    // Use provided tournament data or fallback to state
+    const targetTournament = tournamentData || tournament;
+    
+    if (!providerRef.current || !targetTournament) {
       console.log("Cannot fetch: provider or tournament not available");
       return;
     }
     
     try {
-      console.log("Starting to fetch betting opportunities for tournament:", tournament.address);
+      console.log("Starting to fetch betting opportunities for tournament:", targetTournament.address);
       setOpportunitiesLoading(true);
       
       // Create contract instance directly
       const contract = new ethers.Contract(
-        tournament.address, 
+        targetTournament.address, 
         TOURNAMENT_ABI, 
         providerRef.current
       );
@@ -179,7 +144,116 @@ const TournamentScreen = () => {
       setBettingOpportunities([]);
       setOpportunitiesLoading(false);
     }
-  }, [tournament]);
+  }, [tournament, providerRef]);
+  
+  // Fetch tournament data
+  const fetchTournament = useCallback(async () => {
+    console.log("Fetching tournament for address:", address);
+    if (!address) return;
+    
+    try {
+      const data = await getTournamentByAddress(address);
+      console.log("Tournament data:", data);
+      setTournament(data);
+      setLoading(false);
+      
+      // Always try to fetch betting opportunities immediately after loading tournament 
+      // This helps ensure data is available on page refresh
+      if (data && providerRef.current) {
+        console.log("Fetching betting opportunities after tournament loaded");
+        
+        try {
+          console.log("Starting to fetch betting opportunities for tournament:", data.address);
+          setOpportunitiesLoading(true);
+          
+          // Create contract instance directly
+          const contract = new ethers.Contract(
+            data.address, 
+            TOURNAMENT_ABI, 
+            providerRef.current
+          );
+          
+          console.log("Contract instance created, calling getBettingOpportunities()");
+          
+          // Call the getBettingOpportunities method
+          const opportunities = await contract.getBettingOpportunities();
+          console.log("Raw opportunities data:", opportunities);
+          
+          if (!opportunities || !Array.isArray(opportunities)) {
+            console.error("Invalid opportunities data:", opportunities);
+            setBettingOpportunities([]);
+            setOpportunitiesLoading(false);
+            return;
+          }
+          
+          // Format opportunities for display
+          const formattedOpportunities = opportunities.map((opp: any, index: number) => ({
+            id: Number(opp.id || 0),
+            description: opp.description || `Bet #${index + 1}`,
+            startTime: Number(opp.startTime || 0),
+            options: Array.isArray(opp.options) ? opp.options : [],
+            endTime: Number(opp.endTime || 0),
+            resultsFinalized: Boolean(opp.resultsFinalized),
+            result: opp.resultsFinalized ? Number(opp.result || 0) : null
+          }));
+          
+          console.log("Formatted opportunities:", formattedOpportunities);
+          setBettingOpportunities(formattedOpportunities);
+          setOpportunitiesLoading(false);
+        } catch (error: any) {
+          console.error('Error fetching betting opportunities:', error);
+          setBettingOpportunities([]);
+          setOpportunitiesLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching tournament:', error);
+      setLoading(false);
+    }
+  }, [address, providerRef]);
+  
+  // Fetch groups with polling
+  useEffect(() => {
+    if (!address) return;
+    
+    // Initial fetch
+    fetchGroups();
+    
+    // Set up polling interval (every 5 seconds)
+    const intervalId = setInterval(() => {
+      fetchGroups();
+    }, 5000);
+    
+    // Clean up interval on unmount
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [address]);
+  
+  // Fetch tournament and betting opportunities data when address changes
+  useEffect(() => {
+    console.log("Address changed, fetching tournament:", address);
+    fetchTournament();
+  }, [address, fetchTournament]);
+  
+  // Fetch current ETH price
+  useEffect(() => {
+    const fetchEthPrice = async () => {
+      try {
+        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+        const data = await response.json();
+        if (data && data.ethereum && data.ethereum.usd) {
+          setEthPriceUsd(data.ethereum.usd);
+          console.log('Fetched ETH price:', data.ethereum.usd);
+        }
+      } catch (error) {
+        console.error('Error fetching ETH price:', error);
+        // Keep using default price if fetch fails
+      }
+    };
+    
+    fetchEthPrice();
+  }, []);
   
   // Modified version of toaster error calls with proper text wrapping
   const showErrorToast = (title: string, message: string) => {
@@ -189,7 +263,7 @@ const TournamentScreen = () => {
     });
   };
   
-  // Modified setResults to use our custom dialog
+  // Modified setResults to use Dialog for confirmation
   const setResults = async (betId: number, resultIndex: number) => {
     if (!providerRef.current || !tournament) return;
     
@@ -197,7 +271,7 @@ const TournamentScreen = () => {
     const opportunity = bettingOpportunities.find(o => o.id === betId);
     if (!opportunity) return;
     
-    // Open dialog with data
+    // Store the data and set editing state
     setDialogData({
       betId,
       resultIndex,
@@ -207,9 +281,12 @@ const TournamentScreen = () => {
     setIsDialogOpen(true);
   };
   
-  // Execute result setting after confirmation
+  // Execute result setting
   const confirmSetResult = async () => {
     if (!dialogData || !providerRef.current || !tournament) return;
+    
+    // Declare loadingToastId outside try/catch so it's accessible in both blocks
+    let loadingToastId: string | undefined;
     
     try {
       // Create contract instance with signer
@@ -220,22 +297,22 @@ const TournamentScreen = () => {
         signer
       );
       
-      // Current timestamp in seconds
-      const currentTime = Math.floor(Date.now() / 1000);
+      // Current timestamp in seconds (UTC for blockchain)
+      const currentUtcTime = getCurrentBlockchainTime();
       
-      // Call setResults with the betId, resultIndex, and current time
+      // Call setResults with the betId, resultIndex, and current UTC time
       const tx = await contract.setResults(
         dialogData.betId, 
         dialogData.resultIndex, 
-        currentTime
+        currentUtcTime
       );
       
       // Close dialog
       setIsDialogOpen(false);
       setDialogData(null);
       
-      // Show transaction sent toast
-      toaster.create({
+      // Show transaction sent toast and store the ID
+      loadingToastId = toaster.create({
         title: 'Transaction Sent',
         description: 'Please wait for confirmation...',
         type: 'loading'
@@ -243,6 +320,9 @@ const TournamentScreen = () => {
       
       // Wait for transaction to be mined
       const receipt = await tx.wait();
+      
+      // Dismiss loading toast
+      toaster.dismiss(loadingToastId);
       
       // Calculate gas used and cost
       const gasUsed = receipt.gasUsed;
@@ -252,7 +332,7 @@ const TournamentScreen = () => {
         // Calculate gas cost in ETH
         const gasCostWei = gasUsed * gasPrice;
         const gasCostEth = parseFloat(ethers.formatEther(gasCostWei));
-        const gasCostUsd = gasCostEth * ETH_PRICE_USD;
+        const gasCostUsd = gasCostEth * ethPriceUsd;
         
         // Show success toast with gas fees
         showSuccessWithGas(
@@ -288,6 +368,11 @@ const TournamentScreen = () => {
     } catch (error: any) {
       console.error('Error setting results:', error);
       
+      // Dismiss loading toast if it exists
+      if (loadingToastId) {
+        toaster.dismiss(loadingToastId);
+      }
+      
       showErrorToast(
         'Failed to Set Results',
         error.message || 'Check console for details'
@@ -299,37 +384,83 @@ const TournamentScreen = () => {
     }
   };
   
-  // Update start time function with gas tracking
-  const updateStartTime = async (betId: number) => {
-    if (!providerRef.current || !tournament) return;
+  // Update start time function just prepares data
+  const handleStartTimeClick = (opportunity: any) => {
+    let defaultDateString;
+    
+    if (opportunity.startTime > 0) {
+      // If updating an existing time, convert from blockchain timestamp to local date
+      // Blockchain timestamps are in UTC seconds
+      const existingDate = new Date(opportunity.startTime * 1000);
+      
+      // Add debugging to see what's happening with the timestamp
+      console.log(`
+        Opportunity start time (UTC): ${opportunity.startTime}
+        As Date object: ${existingDate.toString()}
+        Local time: ${existingDate.toLocaleString()}
+        UTC time: ${existingDate.toUTCString()}
+        Timezone offset: ${existingDate.getTimezoneOffset()} minutes
+      `);
+      
+      defaultDateString = formatDateForLocalInput(existingDate);
+      console.log(`Using existing start time in local format: ${defaultDateString}`);
+    } else {
+      // Set default date (1 hour from now) in local time
+      const futureDate = new Date(Date.now() + 3600000); // One hour in the future
+      defaultDateString = formatDateForLocalInput(futureDate);
+      console.log(`Setting default date in local time: ${defaultDateString}`);
+    }
+    
+    // Set for the date picker
+    setSelectedBetId(opportunity.id);
+    setSelectedDate(defaultDateString);
+    
+    // Show the date picker dialog
+    setIsModalOpen(true);
+  };
+  
+  // Handle date submission - Convert from local time to UTC for blockchain
+  const handleSubmitDateTime = useCallback(async () => {
+    if (!selectedBetId || !selectedDate || !providerRef.current || !tournament) {
+      setIsModalOpen(false);
+      return;
+    }
+    
+    // Declare loadingToastId outside the primary try/catch
+    let loadingToastId: string | undefined;
     
     try {
-      // Prompt user for new start time
-      const dateInput = prompt("Enter new start time (YYYY-MM-DD HH:MM):");
-      if (!dateInput) return;
-      
-      // Parse the date input
-      const newDate = new Date(dateInput);
-      if (isNaN(newDate.getTime())) {
+      // Parse the date input (which is in local time from the datetime-local input)
+      const localDate = new Date(selectedDate);
+      if (isNaN(localDate.getTime())) {
         showErrorToast(
           'Invalid Date Format',
-          'Please use YYYY-MM-DD HH:MM'
+          'Please select a valid date and time'
         );
         return;
       }
       
-      // Convert to Unix timestamp (seconds)
-      const newStartTime = Math.floor(newDate.getTime() / 1000);
+      // Convert local time to UTC timestamp (seconds) for blockchain
+      const utcTimestamp = convertLocalDateToBlockchainTime(localDate);
       
       // Ensure the time is in the future
-      const now = Math.floor(Date.now() / 1000);
-      if (newStartTime <= now) {
+      if (!isTimestampInFuture(utcTimestamp)) {
         showErrorToast(
           'Invalid Start Time',
           'Start time must be in the future'
         );
         return;
       }
+      
+      // Get opportunity
+      const opportunity = bettingOpportunities.find(o => o.id === selectedBetId);
+      if (!opportunity) {
+        setIsModalOpen(false);
+        return;
+      }
+      
+      // Close the modal
+      setIsModalOpen(false);
       
       // Create contract instance with signer
       const signer = await providerRef.current.getSigner();
@@ -339,17 +470,11 @@ const TournamentScreen = () => {
         signer
       );
       
-      // Confirm with user
-      const opportunity = bettingOpportunities.find(o => o.id === betId);
-      if (!confirm(`Update start time for "${opportunity?.description}" to ${new Date(newStartTime * 1000).toLocaleString()}?`)) {
-        return;
-      }
-      
       // Call updateBettingOpportunityStartTime with the betId and new start time
-      const tx = await contract.updateBettingOpportunityStartTime(betId, newStartTime);
+      const tx = await contract.updateBettingOpportunityStartTime(selectedBetId, utcTimestamp);
       
       // Show transaction sent toast
-      const loadingToastId = toaster.create({
+      loadingToastId = toaster.create({
         title: 'Transaction Sent',
         description: 'Please wait for confirmation...',
         type: 'loading'
@@ -369,7 +494,7 @@ const TournamentScreen = () => {
         // Calculate gas cost in ETH
         const gasCostWei = gasUsed * gasPrice;
         const gasCostEth = parseFloat(ethers.formatEther(gasCostWei));
-        const gasCostUsd = gasCostEth * ETH_PRICE_USD;
+        const gasCostUsd = gasCostEth * ethPriceUsd;
         
         // Show success toast with gas fees
         showSuccessWithGas(
@@ -388,7 +513,7 @@ const TournamentScreen = () => {
               gasUsed: gasUsed.toString(),
               gasCostEth: gasCostEth.toFixed(6),
               gasCostUsd: gasCostUsd.toFixed(2),
-              description: `Updated start time for "${opportunity?.description}" to ${new Date(newStartTime * 1000).toLocaleString()}`
+              description: `Updated start time for "${opportunity.description}" to ${formatDate(utcTimestamp)}`
             }
           }));
         }
@@ -405,12 +530,17 @@ const TournamentScreen = () => {
     } catch (error: any) {
       console.error('Error updating start time:', error);
       
+      // Dismiss loading toast if it exists
+      if (loadingToastId) {
+        toaster.dismiss(loadingToastId);
+      }
+      
       showErrorToast(
         'Failed to Update Start Time',
         error.message || 'Unknown error'
       );
     }
-  };
+  }, [selectedBetId, selectedDate, providerRef, tournament, bettingOpportunities, fetchBettingOpportunities, ethPriceUsd]);
   
   // For success toast with gas information, also ensure text wrapping
   const showSuccessWithGas = (title: string, gasUsed: ethers.BigNumberish, gasCostEth: number, gasCostUsd: number) => {
@@ -420,16 +550,29 @@ const TournamentScreen = () => {
     });
   };
   
+  // Get tournament status
+  const getTournamentStatus = () => {
+    if (!tournament) return null;
+    
+    const now = getCurrentBlockchainTime();
+    
+    if (now < tournament.startTime) {
+      return <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Upcoming</Box>;
+    } else if (now <= tournament.endTime) {
+      return <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>;
+    } else {
+      return <Box bg="red.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Ended</Box>;
+    }
+  };
+  
   // Add canUpdateStartTime function to check if start time can be updated
   const canUpdateStartTime = (opportunity: any): boolean => {
     if (!opportunity) return false;
     
-    const now = Math.floor(Date.now() / 1000);
-    
     // Can update if start time is 0 (not set) or 
     // if it's set but more than 60 seconds in the future
     return opportunity.startTime === 0 || 
-           (opportunity.startTime > 0 && now < opportunity.startTime - 60);
+           (opportunity.startTime > 0 && isTimestampInFuture(opportunity.startTime, 60));
   };
   
   const fetchGroups = async () => {
@@ -452,52 +595,36 @@ const TournamentScreen = () => {
     }
   };
   
-  // Format timestamp to readable date
+  // Format timestamp to readable date - using utility function
   const formatDate = (timestamp: number) => {
-    try {
-      if (!timestamp || isNaN(timestamp) || timestamp <= 0) {
-        return 'Invalid date';
-      }
-      
-      const date = new Date(timestamp * 1000);
-      
-      if (isNaN(date.getTime())) {
-        return 'Invalid date';
-      }
-      
-      return date.toLocaleString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
-      return 'Invalid date';
-    }
+    return formatBlockchainDateToLocal(timestamp);
   };
   
-  // Check if tournament is active and not ended
+  // Check if tournament has NOT started yet (per Factory.sol requirements)
   const canCreateGroup = () => {
     if (!tournament) return false;
     
-    const now = Math.floor(Date.now() / 1000);
-    return now >= tournament.startTime && now <= tournament.endTime;
+    const now = getCurrentBlockchainTime();
+    // Groups can only be created BEFORE tournament starts
+    return now < tournament.startTime;
   };
   
-  // Get tournament status
-  const getTournamentStatus = () => {
-    if (!tournament) return null;
-    
-    const now = Math.floor(Date.now() / 1000);
-    
-    if (now < tournament.startTime) {
-      return <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Upcoming</Box>;
-    } else if (now <= tournament.endTime) {
-      return <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>;
-    } else {
-      return <Box bg="red.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Ended</Box>;
+  // Get a more descriptive reason why group creation is disabled
+  const getCreateGroupButtonTooltip = () => {
+    if (!providerRef.current) {
+      return "Please connect your wallet first";
     }
+    
+    if (!tournament) {
+      return "Tournament information not available";
+    }
+    
+    const now = getCurrentBlockchainTime();
+    if (now >= tournament.startTime) {
+      return "Groups can only be created before tournament starts";
+    }
+    
+    return "Create new betting group";
   };
   
   const openDrawer = () => setIsDrawerOpen(true);
@@ -516,100 +643,215 @@ const TournamentScreen = () => {
     navigate('/');
   };
   
-  // Memoize the betting opportunities section to prevent unnecessary re-renders
-  const BettingOpportunitiesSection = useMemo(() => {
+  // Use a better implementation for betting opportunities rendering
+  const renderBettingOpportunities = () => {
+    if (opportunitiesLoading) {
+      return (
+        <Flex justify="center" py={4}>
+          <Spinner size="md" color="teal.500" />
+        </Flex>
+      );
+    }
+    
+    if (bettingOpportunities.length === 0) {
+      return <Text color="gray.500">No betting opportunities available</Text>;
+    }
+    
     return (
-      <Box>
-        <HStack justify="space-between" mb={4}>
-          <Heading size="md">Bets ({tournament?.bettingOpportunitiesCount || 0})</Heading>
-          <Button 
-            size="sm" 
-            onClick={fetchBettingOpportunities}
-            loading={opportunitiesLoading}
-            variant="outline"
-          >
-            <Icon as={FiRefreshCw} mr={2} />
-            Refresh
-          </Button>
-        </HStack>
-
-        {opportunitiesLoading ? (
-          <Flex justify="center" py={4}>
-            <Spinner size="md" color="teal.500" />
-          </Flex>
-        ) : bettingOpportunities.length === 0 ? (
-          <Text color="gray.500">No betting opportunities available</Text>
-        ) : (
-          <VStack align="stretch" gap={3}>
-            {bettingOpportunities.map((opportunity) => (
-              <Box key={opportunity.id} p={3} borderWidth="1px" borderRadius="md">
-                <HStack justify="space-between" mb={2}>
-                  <Text fontWeight="bold">{opportunity.description}</Text>
-                  <HStack>
-                    {opportunity.startTime > 0 ? (
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        onClick={() => canUpdateStartTime(opportunity) && updateStartTime(opportunity.id)}
-                        disabled={!canUpdateStartTime(opportunity)}
-                        title={canUpdateStartTime(opportunity) ? "Click to update start time" : "Cannot update start time"}
-                        colorScheme={canUpdateStartTime(opportunity) ? "blue" : "gray"}
-                      >
-                        {formatDate(opportunity.startTime)}
-                        <Icon as={FiCalendar} ml={2} />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={() => updateStartTime(opportunity.id)}
-                        colorScheme="blue"
-                      >
-                        <Icon as={FiClock} mr={2} />
-                        Set Start Time
-                      </Button>
-                    )}
-                    {opportunity.resultsFinalized ? (
-                      <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Results In</Box>
-                    ) : opportunity.startTime > 0 ? (
-                      <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>
-                    ) : (
-                      <Box bg="gray.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Not Started</Box>
-                    )}
-                  </HStack>
-                </HStack>
-                
-                <Grid templateColumns="repeat(8, 1fr)" gap={2} mt={2}>
-                  {opportunity.options.map((option: string, idx: number) => (
-                    <Box 
-                      key={idx} 
-                      p={2} 
-                      bg={opportunity.resultsFinalized && opportunity.result === idx ? "green.100" : "gray.100"} 
-                      borderRadius="md"
-                      borderWidth="1px"
-                      borderColor={opportunity.resultsFinalized && opportunity.result === idx ? "green.500" : "transparent"}
-                      cursor={opportunity.resultsFinalized ? "default" : "pointer"}
-                      onClick={() => !opportunity.resultsFinalized && setResults(opportunity.id, idx)}
-                      _hover={!opportunity.resultsFinalized ? { bg: "blue.50" } : {}}
-                    >
-                      <Text fontSize="sm" textAlign="center">
-                        {option}
-                        {opportunity.resultsFinalized && opportunity.result === idx && (
-                          <Text as="span" color="green.500" ml={1}>
-                            ✓
-                          </Text>
-                        )}
-                      </Text>
-                    </Box>
-                  ))}
-                </Grid>
-              </Box>
-            ))}
-          </VStack>
-        )}
-      </Box>
+      <VStack align="stretch" gap={3}>
+        {bettingOpportunities.map((opportunity) => (
+          <Box key={opportunity.id} p={3} borderWidth="1px" borderRadius="md">
+            <HStack justify="space-between" mb={2}>
+              <Text fontWeight="bold">{opportunity.description}</Text>
+              <HStack>
+                {opportunity.startTime > 0 ? (
+                  <Button
+                    size="xs"
+                    onClick={() => canUpdateStartTime(opportunity) && handleStartTimeClick(opportunity)}
+                    disabled={!canUpdateStartTime(opportunity)}
+                    title={canUpdateStartTime(opportunity) ? "Click to update start time" : "Cannot update start time"}
+                    colorScheme={canUpdateStartTime(opportunity) ? "blue" : "gray"}
+                  >
+                    <Icon as={FiCalendar} mr={2} />
+                    {formatDate(opportunity.startTime)}
+                  </Button>
+                ) : (
+                  <Button
+                    size="xs"
+                    onClick={() => handleStartTimeClick(opportunity)}
+                    colorScheme="blue"
+                  >
+                    <Icon as={FiClock} mr={2} />
+                    Set Start Time
+                  </Button>
+                )}
+                {opportunity.resultsFinalized ? (
+                  <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Results In</Box>
+                ) : opportunity.startTime > 0 ? (
+                  <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>
+                ) : (
+                  <Box bg="gray.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Not Started</Box>
+                )}
+              </HStack>
+            </HStack>
+            
+            <Grid templateColumns="repeat(8, 1fr)" gap={2} mt={2}>
+              {opportunity.options.map((option: string, idx: number) => (
+                <Button 
+                  key={idx}
+                  size="sm"
+                  onClick={() => !opportunity.resultsFinalized && setResults(opportunity.id, idx)}
+                  disabled={opportunity.resultsFinalized}
+                  cursor={opportunity.resultsFinalized ? "default" : "pointer"}
+                  // variant="outline"
+                  colorScheme={opportunity.resultsFinalized && opportunity.result === idx ? "green" : "gray"}
+                  p={2}
+                  h="auto"
+                  fontSize="sm"
+                  position="relative"
+                  _hover={!opportunity.resultsFinalized ? { bg: "blue.50" } : {}}
+                >
+                  {option}
+                  {opportunity.resultsFinalized && opportunity.result === idx && (
+                    <Text as="span" color="green.500" ml={1}>
+                      ✓
+                    </Text>
+                  )}
+                </Button>
+              ))}
+            </Grid>
+          </Box>
+        ))}
+      </VStack>
     );
-  }, [bettingOpportunities, opportunitiesLoading, tournament?.bettingOpportunitiesCount, formatDate, fetchBettingOpportunities, setResults, updateStartTime, canUpdateStartTime]);
+  };
+  
+  // Memoized handlers for the dialogs to prevent unnecessary re-renders
+  const handleDatePickerOpenChange = useCallback(({ open }: { open: boolean }) => {
+    setIsModalOpen(open);
+    if (!open) {
+      console.log("Date picker dialog closed");
+    }
+  }, []);
+  
+  const handleConfirmDialogOpenChange = useCallback(({ open }: { open: boolean }) => {
+    setIsDialogOpen(open);
+    if (!open) setDialogData(null);
+  }, []);
+  
+  // DateTimePicker component
+  const DateTimePicker = useCallback(() => {
+    if (!isModalOpen) return null;
+    
+    const opportunity = bettingOpportunities.find(o => o.id === selectedBetId);
+    if (!opportunity) return null;
+    
+    // No hook calls inside this component now
+    return (
+      <Dialog.Root open={isModalOpen} onOpenChange={handleDatePickerOpenChange}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content>
+            <Dialog.CloseTrigger position="absolute" top={3} right={3}>
+              <Icon as={FiX} />
+            </Dialog.CloseTrigger>
+            
+            <Dialog.Header>
+              <Heading size="md">Set Start Time</Heading>
+            </Dialog.Header>
+            
+            <Dialog.Body>
+              <Text fontWeight="bold" mb={4}>
+                {opportunity.description}
+              </Text>
+              
+              <Box mb={5}>
+                <Text mb={2}>Select Date and Time (Local Time):</Text>
+                <Input 
+                  type="datetime-local" 
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  size="md"
+                  width="100%"
+                />
+                <Text fontSize="sm" color="gray.500" mt={1}>
+                  Using your local time zone: {new Intl.DateTimeFormat().resolvedOptions().timeZone}
+                </Text>
+              </Box>
+            </Dialog.Body>
+            
+            <Dialog.Footer>
+              <Button 
+                variant="outline" 
+                onClick={() => setIsModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                colorScheme="blue" 
+                onClick={handleSubmitDateTime}
+                ml={3}
+              >
+                Set Time
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+    );
+  }, [isModalOpen, selectedBetId, selectedDate, bettingOpportunities, handleSubmitDateTime, handleDatePickerOpenChange]);
+  
+  // Function to manually refresh betting opportunities
+  const refreshBettingOpportunities = useCallback(async () => {
+    if (!tournament || !providerRef.current) {
+      console.log("Cannot refresh: provider or tournament not available");
+      return;
+    }
+    
+    try {
+      console.log("Manually refreshing betting opportunities for tournament:", tournament.address);
+      setOpportunitiesLoading(true);
+      
+      // Create contract instance directly
+      const contract = new ethers.Contract(
+        tournament.address, 
+        TOURNAMENT_ABI, 
+        providerRef.current
+      );
+      
+      console.log("Contract instance created, calling getBettingOpportunities()");
+      
+      // Call the getBettingOpportunities method
+      const opportunities = await contract.getBettingOpportunities();
+      console.log("Raw opportunities data:", opportunities);
+      
+      if (!opportunities || !Array.isArray(opportunities)) {
+        console.error("Invalid opportunities data:", opportunities);
+        setBettingOpportunities([]);
+        setOpportunitiesLoading(false);
+        return;
+      }
+      
+      // Format opportunities for display
+      const formattedOpportunities = opportunities.map((opp: any, index: number) => ({
+        id: Number(opp.id || 0),
+        description: opp.description || `Bet #${index + 1}`,
+        startTime: Number(opp.startTime || 0),
+        options: Array.isArray(opp.options) ? opp.options : [],
+        endTime: Number(opp.endTime || 0),
+        resultsFinalized: Boolean(opp.resultsFinalized),
+        result: opp.resultsFinalized ? Number(opp.result || 0) : null
+      }));
+      
+      console.log("Formatted opportunities:", formattedOpportunities);
+      setBettingOpportunities(formattedOpportunities);
+      setOpportunitiesLoading(false);
+    } catch (error: any) {
+      console.error('Error refreshing betting opportunities:', error);
+      setBettingOpportunities([]);
+      setOpportunitiesLoading(false);
+    }
+  }, [tournament, providerRef]);
   
   if (loading) {
     return (
@@ -670,7 +912,21 @@ const TournamentScreen = () => {
         </Grid>
         
         {/* Betting Opportunities Section */}
-        {BettingOpportunitiesSection}
+        <Box>
+          <HStack justify="space-between" mb={4}>
+            <Heading size="md">Bets ({tournament?.bettingOpportunitiesCount || 0})</Heading>
+            <Button 
+              size="sm" 
+              onClick={refreshBettingOpportunities}
+              disabled={opportunitiesLoading}
+            >
+              <Icon as={FiRefreshCw} mr={2} />
+              Refresh
+            </Button>
+          </HStack>
+          
+          {renderBettingOpportunities()}
+        </Box>
         
         <Box borderTop="1px" borderColor="gray.200" pt={4} />
       </VStack>
@@ -685,13 +941,7 @@ const TournamentScreen = () => {
             disabled={!canCreateGroup() || !providerRef.current}
             borderWidth="1px"
             borderColor="gray.500"
-            title={
-              !providerRef.current 
-                ? "Please connect your wallet first" 
-                : !canCreateGroup() 
-                  ? "Groups can only be created for active tournaments" 
-                  : "Create new betting group"
-            }
+            title={getCreateGroupButtonTooltip()}
           >
             <Icon as={FiPlus} mr={2} />
             Create Betting Group
@@ -717,7 +967,17 @@ const TournamentScreen = () => {
           >
             {groups.map(group => (
               <GridItem key={group.address}>
-                <Box borderWidth="1px" borderRadius="md" p={4} boxShadow="sm" height="100%">
+                <Box 
+                  borderWidth="1px" 
+                  borderRadius="md" 
+                  p={4} 
+                  boxShadow="sm" 
+                  height="100%"
+                  onClick={() => navigate(`/tournaments/${tournament.address}/groups/${group.address}`)}
+                  cursor="pointer"
+                  transition="all 0.2s"
+                  _hover={{ transform: "translateY(-2px)", boxShadow: "md" }}
+                >
                   <VStack align="stretch" gap={2}>
                     <Heading size="sm">{group.description}</Heading>
                     
@@ -733,12 +993,12 @@ const TournamentScreen = () => {
                       
                       <Text fontSize="sm">
                         <Text as="span" fontWeight="bold">Prize Distribution: </Text>
-                        {group.prizeDistribution.join(', ')}%
+                        {group.prizeDistribution.map(value => (value / 10)).join(', ')}%
                       </Text>
                       
                       <Text fontSize="sm">
                         <Text as="span" fontWeight="bold">Closing Window: </Text>
-                        {group.generalClosingWindow} seconds
+                        {Math.round(group.generalClosingWindow / 60)} minutes
                       </Text>
                     </Box>
                   </VStack>
@@ -787,39 +1047,42 @@ const TournamentScreen = () => {
         </Drawer.Positioner>
       </Drawer.Root>
       
-      {/* Custom Confirmation Dialog */}
-      {isDialogOpen && dialogData && (
-        <Box
-          position="fixed"
-          top={0}
-          left={0}
-          right={0}
-          bottom={0}
-          bg="blackAlpha.600"
-          zIndex={1000}
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-          onClick={() => {
-            setIsDialogOpen(false);
-            setDialogData(null);
-          }}
-        >
-          <Box
-            bg="white"
-            p={4}
-            borderRadius="md"
-            width="400px"
-            boxShadow="lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Heading size="md" mb={3}>Confirm Result</Heading>
+      {/* Confirmation using Dialog */}
+      <Dialog.Root 
+        open={isDialogOpen} 
+        onOpenChange={handleConfirmDialogOpenChange}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content>
+            <Dialog.CloseTrigger position="absolute" top={3} right={3}>
+              <Icon as={FiX} />
+            </Dialog.CloseTrigger>
             
-            <Text mb={4}>
-              Are you sure you want to set the result for "{dialogData.description}" to "{dialogData.option}"?
-            </Text>
+            <Dialog.Header>
+              <Heading size="md">Confirm Result</Heading>
+            </Dialog.Header>
             
-            <Flex justify="flex-end" gap={2}>
+            {dialogData && (
+              <Dialog.Body>
+                <Text mb={4}>
+                  Are you sure you want to set the result for "{dialogData.description}" to:
+                </Text>
+                
+                <Box
+                  p={2}
+                  borderRadius="md"
+                  bg="blue.50"
+                  fontWeight="bold"
+                  textAlign="center"
+                  width="100%"
+                  mb={4}
+                >
+                  {dialogData.option}
+                </Box>
+              </Dialog.Body>
+            )}
+            
+            <Dialog.Footer>
               <Button 
                 variant="outline" 
                 onClick={() => {
@@ -832,13 +1095,18 @@ const TournamentScreen = () => {
               <Button 
                 colorScheme="blue" 
                 onClick={confirmSetResult}
+                ml={3}
               >
+                <Icon as={FiCheck} mr={2} />
                 Confirm
               </Button>
-            </Flex>
-          </Box>
-        </Box>
-      )}
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+      
+      {/* Date Time Picker */}
+      <DateTimePicker />
     </Box>
   );
 };

@@ -14,14 +14,130 @@ GROUP_KEY_PREFIX = "group:"
 TOURNAMENT_INDEX = "tournament_index"
 GROUP_INDEX = "group_index"
 LAST_PROCESSED_BLOCK_KEY = "blockchain:last_processed_block"
+KNOWN_TOURNAMENTS_KEY = "blockchain:known_tournaments"
+KNOWN_BETTING_GROUPS_KEY = "blockchain:known_betting_groups"
+USER_GROUPS_KEY_PREFIX = "user:groups:"
 
-# Helper functions
+# Functions for tracking known contracts and user-group mappings
+def add_known_tournament(address):
+    """Add a tournament address to the list of known tournaments"""
+    return redis_client.sadd(KNOWN_TOURNAMENTS_KEY, address)
+
+def add_known_betting_group(address):
+    """Add a betting group address to the list of known betting groups"""
+    return redis_client.sadd(KNOWN_BETTING_GROUPS_KEY, address)
+
+def get_known_tournaments():
+    """Get all known tournament addresses"""
+    return redis_client.smembers(KNOWN_TOURNAMENTS_KEY)
+
+def get_known_betting_groups():
+    """Get all known betting group addresses"""
+    return redis_client.smembers(KNOWN_BETTING_GROUPS_KEY)
+
+def add_user_to_group(user_address, group_address):
+    """Add a user to a betting group"""
+    try:
+        # Normalize addresses to lowercase
+        user_address = user_address.lower()
+        group_address = group_address.lower()
+        
+        # Check if the mapping already exists before adding
+        exists = redis_client.sismember(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
+        if exists:
+            return False  # No change made, mapping already exists
+            
+        # Add to Redis set
+        result = redis_client.sadd(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
+        
+        # Also add reverse lookup for quick access
+        redis_client.sadd(f"group:{group_address}:users", user_address)
+        
+        return result == 1  # Return True if a new member was added
+    except Exception as e:
+        import logging
+        logging.getLogger("blockchain").error(f"Redis error in add_user_to_group: {e}")
+        return False
+
+def remove_user_from_group(user_address, group_address):
+    """Remove a user from a betting group"""
+    try:
+        # Normalize addresses to lowercase
+        user_address = user_address.lower()
+        group_address = group_address.lower()
+        
+        # Check if the mapping exists before removing
+        exists = redis_client.sismember(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
+        if not exists:
+            return False  # No change made, mapping doesn't exist
+            
+        # Remove from Redis set
+        result = redis_client.srem(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
+        
+        # Also remove from reverse lookup
+        redis_client.srem(f"group:{group_address}:users", user_address)
+        
+        return result == 1  # Return True if a member was removed
+    except Exception as e:
+        import logging
+        logging.getLogger("blockchain").error(f"Redis error in remove_user_from_group: {e}")
+        return False
+
+def get_user_groups(user_address):
+    """Get all betting groups a user is registered for"""
+    try:
+        # Normalize address to lowercase
+        user_address = user_address.lower()
+        
+        # Get the groups from Redis
+        groups = redis_client.smembers(f"{USER_GROUPS_KEY_PREFIX}{user_address}")
+        
+        return groups
+    except Exception as e:
+        import logging
+        logging.getLogger("blockchain").error(f"Redis error in get_user_groups: {e}")
+        return set()
+
+def is_user_in_group(user_address, group_address):
+    """Check if a user is registered in a betting group"""
+    try:
+        # Normalize addresses to lowercase
+        user_address = user_address.lower()
+        group_address = group_address.lower()
+        
+        # Check in Redis
+        result = redis_client.sismember(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
+        
+        return bool(result)
+    except Exception as e:
+        import logging
+        logging.getLogger("blockchain").error(f"Redis error in is_user_in_group: {e}")
+        return False
+
+def get_group_users(group_address):
+    """Get all users registered in a betting group"""
+    try:
+        # Normalize address to lowercase
+        group_address = group_address.lower()
+        
+        # Get the users from Redis
+        users = redis_client.smembers(f"group:{group_address}:users")
+        
+        return users
+    except Exception as e:
+        import logging
+        logging.getLogger("blockchain").error(f"Redis error in get_group_users: {e}")
+        return set()
+
+# Original helper functions
 def save_tournament(address, data):
     """Save tournament data to Redis"""
     # Save tournament details
     redis_client.hset(f"{TOURNAMENT_KEY_PREFIX}{address}", mapping=data)
     # Add to address index
     redis_client.sadd(TOURNAMENT_INDEX, address)
+    # Add to known tournaments list
+    add_known_tournament(address)
     # Add to description search index
     if "description" in data:
         description_words = data["description"].lower().split()
@@ -34,6 +150,8 @@ def save_group(address, data):
     redis_client.hset(f"{GROUP_KEY_PREFIX}{address}", mapping=data)
     # Add to address index
     redis_client.sadd(GROUP_INDEX, address)
+    # Add to known betting groups list
+    add_known_betting_group(address)
     # Add to tournament groups index
     if "tournament_address" in data:
         redis_client.sadd(f"tournament:{data['tournament_address']}:groups", address)

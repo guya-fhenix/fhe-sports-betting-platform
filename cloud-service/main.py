@@ -3,7 +3,7 @@ import logging
 import time
 import json
 import socketio
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Response, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
@@ -18,9 +18,13 @@ from models import (
 from db import (
     get_tournament, get_group, 
     search_tournaments_by_description, search_groups_by_description,
-    get_tournament_groups, get_all_tournaments, get_all_groups
+    get_tournament_groups, get_all_tournaments, get_all_groups,
+    get_user_groups
 )
-from blockchain import watch_events
+from blockchain import (
+    watch_events, sync_user_group_mappings, 
+    verify_all_user_group_mappings, is_user_registered_in_group_blockchain
+)
 from logging_config import setup_logging, MAX_BODY_SIZE, MAX_LIST_ITEMS
 from websocket import manager, active_ws_manager
 
@@ -364,9 +368,104 @@ async def get_groups_by_tournament(address: str):
     logger.info(f"Found {len(groups)} betting groups for tournament {address}")
     return groups
 
+@app.get("/api/user/{address}/groups")
+async def get_user_groups(address: str):
+    """Get betting groups a user is registered for"""
+    # Normalize the address to lowercase for consistent comparison
+    address = address.lower()
+    
+    # Get the user's groups directly from Redis
+    user_group_addresses = get_user_groups(address)
+    
+    # Get details for each group
+    groups = []
+    for group_address in user_group_addresses:
+        group_data = get_group(group_address)
+        if group_data:  # Only include if we have data
+            # Add address to the group data
+            group_data["address"] = group_address
+            
+            # Convert string values to appropriate types
+            group_data["registration_end_time"] = int(group_data["registration_end_time"])
+            group_data["general_closing_window"] = int(group_data["general_closing_window"])
+            group_data["prize_distribution"] = [int(p) for p in group_data["prize_distribution"].split(",")]
+            if "event_block" in group_data:
+                group_data["event_block"] = int(group_data["event_block"])
+                
+            groups.append(group_data)
+    
+    return {
+        "user_address": address,
+        "groups": groups
+    }
+
 # Export the broadcast function to the blockchain module
 active_ws_manager.set_broadcast_func(broadcast_blockchain_event)
 
 # Configure uvicorn to use Socket.IO app
 if __name__ == "__main__":
     uvicorn.run(socket_app, host="0.0.0.0", port=8000, reload=False)
+
+# Admin helper endpoints to force resync
+@app.post("/admin/resync/group/{address}")
+async def resync_betting_group(address: str):
+    """Manually resync user-group mappings for a specific betting group"""
+    try:
+        logger.info(f"Manual resync requested for group {address}")
+        result = await sync_user_group_mappings(address)
+        return {
+            "status": "success" if result else "error",
+            "message": f"Group {address} user mappings {'successfully resynced' if result else 'resync failed'}"
+        }
+    except Exception as e:
+        logger.error(f"Error in manual resync for group {address}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error resyncing: {str(e)}")
+
+@app.post("/admin/resync/all-groups")
+async def resync_all_groups():
+    """Manually resync user-group mappings for all betting groups"""
+    try:
+        logger.info("Manual resync requested for all groups")
+        count = await verify_all_user_group_mappings()
+        return {
+            "status": "success",
+            "message": f"Successfully resynced {count} groups"
+        }
+    except Exception as e:
+        logger.error(f"Error in manual resync for all groups: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error resyncing: {str(e)}")
+
+@app.get("/admin/verify/user-in-group/{user_address}/{group_address}")
+async def verify_user_in_group(user_address: str, group_address: str):
+    """Verify if a user is registered in a specific betting group"""
+    try:
+        # Check on-chain status
+        blockchain_status = await is_user_registered_in_group_blockchain(user_address, group_address)
+        
+        # Check Redis status
+        redis_status = get_user_groups(user_address)
+        in_redis = group_address.lower() in [g.lower() for g in redis_status]
+        
+        # If statuses don't match, fix Redis
+        if blockchain_status and not in_redis:
+            from db import add_user_to_group
+            add_user_to_group(user_address, group_address)
+            fixed = True
+        elif not blockchain_status and in_redis:
+            from db import remove_user_from_group
+            remove_user_from_group(user_address, group_address)
+            fixed = True
+        else:
+            fixed = False
+        
+        return {
+            "user_address": user_address,
+            "group_address": group_address,
+            "blockchain_status": blockchain_status,
+            "redis_status": in_redis,
+            "status_match": blockchain_status == in_redis,
+            "redis_updated": fixed
+        }
+    except Exception as e:
+        logger.error(f"Error verifying user registration: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error verifying: {str(e)}")

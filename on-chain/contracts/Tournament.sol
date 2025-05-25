@@ -7,6 +7,19 @@ import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 /// @notice Contract for managing sports tournaments with betting opportunities
 contract Tournament {
 
+    // Custom Errors
+    error OnlyPlatformAdmin();
+    error ZeroAddress();
+    error BettingOpportunityDoesNotExist();
+    error TournamentNotStarted();
+    error CannotUpdateTimingAfterBettingStarted();
+    error StartTimeMustBeGreaterThanZero();
+    error StartTimeMustBeInFuture();
+    error ResultsAlreadyFinalized();
+    error EndTimeMustBeGreaterThanZero();
+    error StartTimeMustBeSetBeforeResults();
+    error EndTimeMustBeAfterStartTime();
+
     // Input struct for betting opportunities
     struct BettingOpportunityInput {
         uint16 id;
@@ -41,7 +54,7 @@ contract Tournament {
 
     // Modifiers
     modifier onlyPlatformAdmin() {
-        require(msg.sender == platformAdmin, "Only platform admin can perform this action");
+        if (msg.sender != platformAdmin) revert OnlyPlatformAdmin();
         _;
     }
 
@@ -50,7 +63,7 @@ contract Tournament {
      * @param _newAdmin New admin address
      */
     function setPlatformAdmin(address _newAdmin) external onlyPlatformAdmin {
-        require(_newAdmin != address(0), "New admin cannot be zero address");
+        if (_newAdmin == address(0)) revert ZeroAddress();
         platformAdmin = _newAdmin;
     }
     
@@ -63,25 +76,18 @@ contract Tournament {
     }
 
     modifier bettingOpportunityExists(uint16 _betId) {
-        require(bettingOpportunities[_betId].id == _betId, "Betting opportunity does not exist");
+        if (bettingOpportunities[_betId].id != _betId) revert BettingOpportunityDoesNotExist();
         _;
     }
 
     modifier onlyAfterTournamentStart() {
-        require(
-            block.timestamp > startTime,
-            "Tournament has not started"
-        );
+        if (block.timestamp <= startTime) revert TournamentNotStarted();
         _;
     }
 
     modifier canUpdateStartTime(uint16 _betId) {
         BettingOpportunity storage bet = bettingOpportunities[_betId];
-        require(
-            bet.startTime == 0 || 
-            (bet.startTime > 0 && block.timestamp < bet.startTime - 60), // Add 60 seconds gap for edge cases
-            "Cannot update timing after betting has started"
-        );
+        if (bet.startTime != 0 && block.timestamp >= bet.startTime - 60) revert CannotUpdateTimingAfterBettingStarted();
         _;
     }
 
@@ -139,8 +145,8 @@ contract Tournament {
         uint16 _betId,
         uint256 _startTime
     ) external onlyPlatformAdmin bettingOpportunityExists(_betId) canUpdateStartTime(_betId) {
-        require(_startTime > 0, "Start time must be greater than 0");
-        require(_startTime > block.timestamp, "Start time must be in the future");
+        if (_startTime == 0) revert StartTimeMustBeGreaterThanZero();
+        if (_startTime <= block.timestamp) revert StartTimeMustBeInFuture();
         
         BettingOpportunity storage bet = bettingOpportunities[_betId];
         bet.startTime = _startTime;
@@ -160,12 +166,12 @@ contract Tournament {
         uint16 _result,
         uint256 _endTime
     ) external onlyPlatformAdmin onlyAfterTournamentStart bettingOpportunityExists(_betId) {
-        require(!bettingOpportunities[_betId].resultsFinalized, "Results already finalized");
-        require(_endTime > 0, "End time must be greater than 0");
+        if (bettingOpportunities[_betId].resultsFinalized) revert ResultsAlreadyFinalized();
+        if (_endTime == 0) revert EndTimeMustBeGreaterThanZero();
         
         BettingOpportunity storage bet = bettingOpportunities[_betId];
-        require(bet.startTime > 0, "Start time must be set before setting results");
-        require(_endTime >= bet.startTime, "End time must be after start time");
+        if (bet.startTime == 0) revert StartTimeMustBeSetBeforeResults();
+        if (_endTime < bet.startTime) revert EndTimeMustBeAfterStartTime();
         
         // Store results directly
         bet.result = _result;
@@ -193,6 +199,10 @@ contract Tournament {
 
     function getOptionsLength(uint16 _betId) external view bettingOpportunityExists(_betId) returns (euint16) {
         return bettingOpportunities[_betId].optionsLength;
+    }
+
+    function getBettingOpportunitiesCount() external view returns (uint16) {
+        return uint16(bettingOpportunityIds.length);
     }
 
     function getBettingOpportunities() external view returns (BettingOpportunity[] memory) {

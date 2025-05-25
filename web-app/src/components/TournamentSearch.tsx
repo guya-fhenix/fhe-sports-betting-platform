@@ -15,12 +15,15 @@ import {
   Icon,
   Portal,
   Select,
-  createListCollection
+  createListCollection,
+  HStack
 } from '@chakra-ui/react';
 import { FiPlus } from 'react-icons/fi';
-import { getTournaments } from '../services/api';
-import type { Tournament } from '../types';
+import { getTournaments, getUserGroups } from '../services/api';
+import type { Tournament, Group } from '../types';
 import TournamentCard from './TournamentCard';
+import { Link as RouterLink } from 'react-router-dom';
+import { ethers } from 'ethers';
 
 // Tournament status types
 type TournamentStatus = 'active' | 'upcoming' | 'ended' | null;
@@ -32,6 +35,9 @@ const TournamentSearch = () => {
   const [filteredTournaments, setFilteredTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<TournamentStatus>(null);
+  const [userGroups, setUserGroups] = useState<Group[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [userAddress, setUserAddress] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
   // Create the filter collection for the Select component
@@ -46,7 +52,30 @@ const TournamentSearch = () => {
   // Try to access parent component context if available
   const drawerContext = (window as any).__drawerContext;
   const openDrawer = drawerContext?.openDrawer;
-  const provider = drawerContext?.provider;
+  const provider = drawerContext?.provider as ethers.BrowserProvider | null;
+
+  // Check if wallet is connected and get the user's address
+  useEffect(() => {
+    const checkWalletConnection = async () => {
+      if (provider) {
+        try {
+          const accounts = await provider.listAccounts();
+          if (accounts && accounts.length > 0) {
+            setUserAddress(accounts[0].address);
+          } else {
+            setUserAddress(null);
+          }
+        } catch (error) {
+          console.error('Error getting accounts:', error);
+          setUserAddress(null);
+        }
+      } else {
+        setUserAddress(null);
+      }
+    };
+
+    checkWalletConnection();
+  }, [provider]);
 
   // Fetch all tournaments on component mount and set up polling
   useEffect(() => {
@@ -63,6 +92,15 @@ const TournamentSearch = () => {
       clearInterval(intervalId);
     };
   }, []);
+
+  // Fetch user's registered groups when user connects wallet
+  useEffect(() => {
+    if (userAddress) {
+      fetchUserGroups();
+    } else {
+      setUserGroups([]);
+    }
+  }, [userAddress]);
 
   // Apply filters whenever search query or status filter changes
   useEffect(() => {
@@ -84,6 +122,20 @@ const TournamentSearch = () => {
       if (loading) {
         setLoading(false);
       }
+    }
+  };
+
+  const fetchUserGroups = async () => {
+    if (!userAddress) return;
+    
+    setLoadingGroups(true);
+    try {
+      const groups = await getUserGroups(userAddress);
+      setUserGroups(groups);
+    } catch (error) {
+      console.error('Error fetching user groups:', error);
+    } finally {
+      setLoadingGroups(false);
     }
   };
 
@@ -154,8 +206,89 @@ const TournamentSearch = () => {
     );
   };
 
+  // Render user's registered groups
+  const renderUserGroups = () => {
+    if (!userAddress) {
+      return (
+        <Box p={4} mb={6} borderWidth="1px" borderRadius="lg" borderColor="gray.300">
+          <Text color="gray.600">Connect your wallet to see your registered betting groups</Text>
+        </Box>
+      );
+    }
+
+    if (loadingGroups) {
+      return (
+        <Box p={4} mb={6} borderWidth="1px" borderRadius="lg" borderColor="gray.300">
+          <Flex align="center" justify="center" py={2}>
+            <Spinner size="sm" color="teal.500" mr={2} />
+            <Text color="gray.600">Loading your registered groups...</Text>
+          </Flex>
+        </Box>
+      );
+    }
+
+    if (userGroups.length === 0) {
+      return (
+        <Box p={4} mb={6} borderWidth="1px" borderRadius="lg" borderColor="gray.300">
+          <Text color="gray.600">You are not registered to any betting groups yet</Text>
+        </Box>
+      );
+    }
+
+    return (
+      <VStack align="stretch" gap={4} mb={6}>
+        <Heading size="md" color="gray.700">Your Registered Betting Groups</Heading>
+        <Grid 
+          templateColumns={{
+            base: "1fr",
+            md: "repeat(2, 1fr)",
+            lg: "repeat(3, 1fr)",
+            xl: "repeat(4, 1fr)"
+          }} 
+          gap={4}
+        >
+          {userGroups.map(group => (
+            <GridItem key={group.address}>
+              <RouterLink to={`/tournaments/${group.tournamentAddress}/groups/${group.address}`}>
+                <Box 
+                  p={4} 
+                  boxShadow="md" 
+                  borderRadius="md" 
+                  borderWidth="1px" 
+                  borderColor="gray.300"
+                  _hover={{ 
+                    transform: 'translateY(-2px)', 
+                    boxShadow: 'lg',
+                    borderColor: 'teal.300'
+                  }}
+                  transition="all 0.2s"
+                  height="100%"
+                  display="block"
+                >
+                  <VStack align="stretch" gap={2}>
+                    <Heading size="sm" truncate>
+                      {group.description}
+                    </Heading>
+                    <Text fontSize="xs" color="gray.500" truncate>
+                      {group.address}
+                    </Text>
+                  </VStack>
+                </Box>
+              </RouterLink>
+            </GridItem>
+          ))}
+        </Grid>
+      </VStack>
+    );
+  };
+
   return (
     <VStack gap={6} align="stretch" width="100%" color="gray.700">
+      {/* User's registered betting groups section */}
+      {renderUserGroups()}
+      
+      {userGroups.length > 0 && <Box height="1px" bg="gray.200" mb={4} />}
+
       <Flex 
         align="center" 
         gap={6} 

@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { FACTORY_CONTRACT_ADDRESS, FACTORY_ABI } from '../config';
+import { FACTORY_CONTRACT_ADDRESS, FACTORY_ABI, TOURNAMENT_ABI, BETTING_GROUP_ABI } from '../config';
 import type { TournamentCreateInput, GroupCreateInput } from '../types';
 
 // Get the Factory contract
@@ -21,16 +21,16 @@ export const getFactoryContract = (provider: ethers.BrowserProvider, withSigner 
   return Promise.resolve(contract);
 };
 
-// Tournament ABI - simplified for the specific functions we need
-const TOURNAMENT_ABI = [
-  "function getBettingOpportunities() view returns (tuple(string description, uint256 startTime, string[] options)[])",
-  "function getResults() view returns (int8[])"
-];
-
 // Get a tournament contract instance
 export const getTournamentContract = (provider: ethers.BrowserProvider, address: string) => {
   // Create the contract instance
   return new ethers.Contract(address, TOURNAMENT_ABI, provider);
+};
+
+// Get a betting group contract instance
+export const getBettingGroupContract = (provider: ethers.BrowserProvider, address: string) => {
+  // Create the contract instance
+  return new ethers.Contract(address, BETTING_GROUP_ABI, provider);
 };
 
 // Get betting opportunities and results from a tournament
@@ -124,26 +124,40 @@ export const createBettingGroup = async (
   data: {
     description: string;
     registrationEndTime: number;
-    prizeDistribution: number[];
+    prizeDistribution: number[]; // Decimal percentages (e.g., 99.5, 70.0, 29.5)
     generalClosingWindow: number;
+    entryFee: string; // Required entry fee in ETH
   }
 ): Promise<string> => {
   const contract = await getFactoryContract(provider, true) as any;
   
+  // Convert the entry fee to wei
+  const entryFeeWei = ethers.parseEther(data.entryFee).toString();
+  
+  // Convert decimal percentages to integers (e.g., 99.5 -> 995)
+  const prizeDistributionIntegers = data.prizeDistribution.map(
+    percentage => Math.round(percentage * 10)
+  );
+  
   console.log('Creating betting group with data:', {
     tournamentAddress,
     description: data.description,
-    registrationEndTime: data.registrationEndTime,
+    entryFee: entryFeeWei,
     prizeDistribution: data.prizeDistribution,
+    prizeDistributionIntegers,
     generalClosingWindow: data.generalClosingWindow
   });
   
-  // Call the createBettingGroup function
+  // Ensure tournamentAddress is treated as a raw address (prevent ENS lookup)
+  // This is needed to avoid ENS resolution errors on networks that don't support it
+  tournamentAddress = ethers.getAddress(tournamentAddress);
+  
+  // Call the createBettingGroup function with entryFee parameter
   const tx = await contract.createBettingGroup(
-    tournamentAddress,
     data.description,
-    data.registrationEndTime,
-    data.prizeDistribution,
+    tournamentAddress,
+    entryFeeWei,
+    prizeDistributionIntegers, // Use the integer values
     data.generalClosingWindow
   );
   
