@@ -38,10 +38,6 @@ def get_known_betting_groups():
 def add_user_to_group(user_address, group_address):
     """Add a user to a betting group"""
     try:
-        # Normalize addresses to lowercase
-        user_address = user_address.lower()
-        group_address = group_address.lower()
-        
         # Check if the mapping already exists before adding
         exists = redis_client.sismember(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
         if exists:
@@ -62,10 +58,6 @@ def add_user_to_group(user_address, group_address):
 def remove_user_from_group(user_address, group_address):
     """Remove a user from a betting group"""
     try:
-        # Normalize addresses to lowercase
-        user_address = user_address.lower()
-        group_address = group_address.lower()
-        
         # Check if the mapping exists before removing
         exists = redis_client.sismember(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
         if not exists:
@@ -86,9 +78,6 @@ def remove_user_from_group(user_address, group_address):
 def get_user_groups(user_address):
     """Get all betting groups a user is registered for"""
     try:
-        # Normalize address to lowercase
-        user_address = user_address.lower()
-        
         # Get the groups from Redis
         groups = redis_client.smembers(f"{USER_GROUPS_KEY_PREFIX}{user_address}")
         
@@ -101,10 +90,6 @@ def get_user_groups(user_address):
 def is_user_in_group(user_address, group_address):
     """Check if a user is registered in a betting group"""
     try:
-        # Normalize addresses to lowercase
-        user_address = user_address.lower()
-        group_address = group_address.lower()
-        
         # Check in Redis
         result = redis_client.sismember(f"{USER_GROUPS_KEY_PREFIX}{user_address}", group_address)
         
@@ -117,9 +102,6 @@ def is_user_in_group(user_address, group_address):
 def get_group_users(group_address):
     """Get all users registered in a betting group"""
     try:
-        # Normalize address to lowercase
-        group_address = group_address.lower()
-        
         # Get the users from Redis
         users = redis_client.smembers(f"group:{group_address}:users")
         

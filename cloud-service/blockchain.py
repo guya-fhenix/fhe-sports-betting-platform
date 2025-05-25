@@ -7,7 +7,7 @@ from config import FACTORY_CONTRACT_ADDRESS, RPC_URL, STARTING_BLOCK
 from db import (
     save_tournament, save_group, save_last_processed_block, get_last_processed_block,
     add_known_tournament, add_known_betting_group, get_known_tournaments, get_known_betting_groups,
-    add_user_to_group, remove_user_from_group, get_user_groups, is_user_in_group
+    add_user_to_group, remove_user_from_group, get_user_groups, is_user_in_group, get_group_users
 )
 # Import the updated broadcast manager
 from websocket import active_ws_manager
@@ -651,20 +651,10 @@ async def sync_user_group_mappings(group_address):
 async def get_all_users_in_group(group_address):
     """Get all users registered in a specific betting group"""
     try:
-        # Find all users that have this group in their sets
-        # This requires scanning all user:groups:* keys
-        keys = redis_client.scan_iter(f"{USER_GROUPS_KEY_PREFIX}*")
-        users = []
-        
-        for key in keys:
-            # Extract user address from the key
-            user_address = key.split(':')[-1]
-            
-            # Check if this user has the group
-            if redis_client.sismember(key, group_address):
-                users.append(user_address)
-                
-        return users
+        # Use the existing get_group_users function from db.py
+        # which uses the reverse lookup that's already maintained
+        users = get_group_users(group_address)
+        return list(users)  # Convert set to list
     except Exception as e:
         logger.error(f"Error getting users in group {group_address}: {e}")
         return []

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import {
   Box,
-  Button,
+  Button as ChakraButton,
   Field,
   Heading,
   Icon,
@@ -20,6 +20,8 @@ import { ethers } from 'ethers';
 import { createTournament } from '../services/blockchain';
 import type { TournamentCreateInput } from '../types';
 import { toaster } from '../components/ui/toaster';
+import { Button } from './ui/button';
+import { Card, CardBody, CardHeader } from './ui/card';
 
 interface CreateTournamentProps {
   provider: ethers.BrowserProvider | null;
@@ -218,162 +220,205 @@ const CreateTournament = ({ provider, onSuccess }: CreateTournamentProps) => {
   };
   
   return (
-    <Box maxW="800px" mx="auto" p={4}>
+    <Box maxW="800px" mx="auto">
       <form onSubmit={handleSubmit(onSubmit)}>
-        <VStack gap={6} align="stretch">
-          <Field.Root invalid={!!errors.description}>
-            <Field.Label>Tournament Description</Field.Label>
-            <Input 
-              {...register('description', { required: 'Description is required' })} 
-              placeholder="Enter tournament description"
-            />
-            {errors.description && <Field.ErrorText>{errors.description.message}</Field.ErrorText>}
-          </Field.Root>
-          
-          <HStack gap={4} align="start">
-            <Field.Root invalid={!!errors.startTime} flex="1">
-              <Field.Label>Start Time</Field.Label>
-              <Input 
-                type="datetime-local" 
-                value={startDateValue}
-                onChange={(e) => setStartDateValue(e.target.value)}
-              />
-              {errors.startTime && <Field.ErrorText>{errors.startTime.message}</Field.ErrorText>}
-              <Text fontSize="sm" color="gray.500">Select start date and time</Text>
-            </Field.Root>
-            
-            <Field.Root invalid={!!errors.endTime} flex="1">
-              <Field.Label>End Time</Field.Label>
-              <Input 
-                type="datetime-local" 
-                value={endDateValue}
-                onChange={(e) => setEndDateValue(e.target.value)}
-              />
-              {errors.endTime && <Field.ErrorText>{errors.endTime.message}</Field.ErrorText>}
-              <Text fontSize="sm" color="gray.500">Select end date and time</Text>
-            </Field.Root>
-          </HStack>
-          
-          <Separator />
-          
-          <Box>
-            <Heading size="md" mb={4}>Betting Opportunities</Heading>
-            
-            {fields.map((field, betIndex) => (
-              <Box key={field.id} p={4} borderWidth="1px" borderRadius="md" mb={4}>
-                <VStack gap={4} align="stretch">
-                  <HStack justifyContent="space-between">
-                    <Heading size="sm">Opportunity #{betIndex + 1}</Heading>
-                    
-                    {fields.length > 1 && (
-                      <IconButton
-                        aria-label="Remove opportunity"
-                        size="sm"
-                        colorScheme="red"
-                        onClick={() => remove(betIndex)}
-                      >
-                        <Icon>
-                          <FiTrash2 />
-                        </Icon>
-                      </IconButton>
-                    )}
-                  </HStack>
-                  
-                  <Field.Root>
-                    <Field.Label>Description</Field.Label>
-                    <Textarea 
-                      {...register(`bettingOpportunities.${betIndex}.description` as const, {
-                        required: 'Description is required'
-                      })}
-                      placeholder="Enter a description for this betting opportunity"
+        <VStack gap={8} align="stretch">
+          {/* Tournament Details */}
+          <Card variant="default">
+            <CardHeader>
+              <Heading size="lg" color="gray.800">Tournament Details</Heading>
+            </CardHeader>
+            <CardBody>
+              <VStack gap={6} align="stretch">
+                <Field.Root invalid={!!errors.description}>
+                  <Field.Label fontWeight="medium" color="gray.700">Tournament Description</Field.Label>
+                  <Input 
+                    {...register('description', { required: 'Description is required' })} 
+                    placeholder="Enter tournament description"
+                    size="lg"
+                  />
+                  {errors.description && <Field.ErrorText>{errors.description.message}</Field.ErrorText>}
+                </Field.Root>
+                
+                <HStack gap={6} align="start">
+                  <Field.Root invalid={!!errors.startTime} flex="1">
+                    <Field.Label fontWeight="medium" color="gray.700">Start Time</Field.Label>
+                    <Input 
+                      type="datetime-local" 
+                      value={startDateValue}
+                      onChange={(e) => setStartDateValue(e.target.value)}
+                      size="lg"
                     />
+                    {errors.startTime && <Field.ErrorText>{errors.startTime.message}</Field.ErrorText>}
+                    <Text fontSize="sm" color="gray.500" mt={1}>Select start date and time</Text>
                   </Field.Root>
                   
-                  <Field.Root invalid={!!errors.bettingOpportunities?.[betIndex]?.options}>
-                    <Field.Label>Options (minimum 2 required)</Field.Label>
-                    
-                    <Box>
-                      <Flex wrap="wrap" gap={2} mb={2}>
-                        {field.options.map((option, optionIndex) => (
-                          <Flex key={optionIndex} mb={2} width={{ base: "100%", md: "auto" }}>
-                            <Field.Root flex="1">
-                              <Input 
-                                {...register(`bettingOpportunities.${betIndex}.options.${optionIndex}` as const, {
-                                  required: 'Option is required'
-                                })}
-                                placeholder={`Option ${optionIndex + 1}`}
-                              />
-                            </Field.Root>
-                            
-                            {field.options.length > 2 && (
-                              <IconButton
-                                aria-label="Remove option"
-                                size="sm"
-                                colorScheme="red"
-                                onClick={() => removeOption(betIndex, optionIndex)}
-                                ml={2}
-                              >
-                                <Icon>
-                                  <FiTrash2 />
-                                </Icon>
-                              </IconButton>
-                            )}
-                          </Flex>
-                        ))}
-                      </Flex>
-                      
-                      <Button
-                        size="sm"
-                        mt={2}
-                        color="black"
-                        onClick={() => addOption(betIndex)}
-                      >
-                        <Icon mr={2}>
-                          <FiPlus />
-                        </Icon>
-                        Add Option
-                      </Button>
-                      
-                      {errors.bettingOpportunities?.[betIndex]?.options && (
-                        <Text color="red.500" fontSize="sm" mt={2}>
-                          {errors.bettingOpportunities[betIndex].options?.message}
-                        </Text>
-                      )}
-                    </Box>
+                  <Field.Root invalid={!!errors.endTime} flex="1">
+                    <Field.Label fontWeight="medium" color="gray.700">End Time</Field.Label>
+                    <Input 
+                      type="datetime-local" 
+                      value={endDateValue}
+                      onChange={(e) => setEndDateValue(e.target.value)}
+                      size="lg"
+                    />
+                    {errors.endTime && <Field.ErrorText>{errors.endTime.message}</Field.ErrorText>}
+                    <Text fontSize="sm" color="gray.500" mt={1}>Select end date and time</Text>
                   </Field.Root>
-                </VStack>
-              </Box>
-            ))}
-            
-            <Button
-              colorScheme="blue"
-              onClick={() => append({ id: fields.length + 1, description: '', startTime: 0, options: ['', ''] })}
-              size="md"
-              mt={2}
-            >
-              <Icon mr={2}>
-                <FiPlus />
-              </Icon>
-              Add Betting Opportunity
-            </Button>
-          </Box>
+                </HStack>
+              </VStack>
+            </CardBody>
+          </Card>
           
-          <Button
-            colorScheme="teal"
-            data-active={isSubmitting}
-            type="submit"
-            size="lg"
-            mt={4}
-            disabled={!provider}
-          >
-            {isSubmitting ? "Creating..." : "Create Tournament"}
-          </Button>
+          {/* Betting Opportunities */}
+          <Card variant="default">
+            <CardHeader>
+              <HStack justify="space-between" align="center">
+                <Heading size="lg" color="gray.800">Bets</Heading>
+                <Button
+                  variant="outline"
+                  onClick={() => append({ id: fields.length + 1, description: '', startTime: 0, options: ['', ''] })}
+                  size="md"
+                >
+                  <Icon mr={2}>
+                    <FiPlus />
+                  </Icon>
+                  Add
+                </Button>
+              </HStack>
+            </CardHeader>
+            <CardBody>
+              <VStack gap={6} align="stretch">
+                {fields.map((field, betIndex) => (
+                  <Card key={field.id} variant="outline">
+                    <CardBody p={6}>
+                      <VStack gap={5} align="stretch">
+                        <HStack justifyContent="space-between" align="center">
+                          <Heading size="md" color="gray.700">Bet #{betIndex + 1}</Heading>
+                          
+                          {fields.length > 1 && (
+                            <IconButton
+                              aria-label="Remove opportunity"
+                              size="sm"
+                              colorScheme="red"
+                              onClick={() => remove(betIndex)}
+                            >
+                              <Icon>
+                                <FiTrash2 />
+                              </Icon>
+                            </IconButton>
+                          )}
+                        </HStack>
+                        
+                        <Field.Root>
+                          <Field.Label fontWeight="medium" color="gray.700">Description</Field.Label>
+                          <Textarea 
+                            {...register(`bettingOpportunities.${betIndex}.description` as const, {
+                              required: 'Description is required'
+                            })}
+                            placeholder="Enter a description for this betting opportunity"
+                            size="lg"
+                            rows={3}
+                          />
+                        </Field.Root>
+                        
+                        <Field.Root invalid={!!errors.bettingOpportunities?.[betIndex]?.options}>
+                          <Field.Label fontWeight="medium" color="gray.700">
+                            Betting Options (minimum 2 required)
+                          </Field.Label>
+                          
+                          <VStack gap={3} align="stretch">
+                            {field.options.map((option, optionIndex) => (
+                              <HStack key={optionIndex} gap={3}>
+                                <Input 
+                                  {...register(`bettingOpportunities.${betIndex}.options.${optionIndex}` as const, {
+                                    required: 'Option is required'
+                                  })}
+                                  placeholder={`Option ${optionIndex + 1}`}
+                                  size="md"
+                                  flex="1"
+                                />
+                                
+                                {field.options.length > 2 && (
+                                  <IconButton
+                                    aria-label="Remove option"
+                                    size="sm"
+                                    colorScheme="red"
+                                    onClick={() => removeOption(betIndex, optionIndex)}
+                                  >
+                                    <Icon>
+                                      <FiTrash2 />
+                                    </Icon>
+                                  </IconButton>
+                                )}
+                              </HStack>
+                            ))}
+                            
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => addOption(betIndex)}
+                              w="fit-content"
+                            >
+                              <Icon mr={2}>
+                                <FiPlus />
+                              </Icon>
+                              Add Option
+                            </Button>
+                            
+                            {errors.bettingOpportunities?.[betIndex]?.options && (
+                              <Text color="error.500" fontSize="sm">
+                                {errors.bettingOpportunities[betIndex].options?.message}
+                              </Text>
+                            )}
+                          </VStack>
+                        </Field.Root>
+                      </VStack>
+                    </CardBody>
+                  </Card>
+                ))}
+                
+                {fields.length === 0 && (
+                  <Box textAlign="center" py={8}>
+                    <Text color="gray.500" mb={4}>No betting opportunities added yet</Text>
+                    <Button
+                      variant="outline"
+                      onClick={() => append({ id: 1, description: '', startTime: 0, options: ['', ''] })}
+                    >
+                      <Icon mr={2}>
+                        <FiPlus />
+                      </Icon>
+                      Add First Opportunity
+                    </Button>
+                  </Box>
+                )}
+              </VStack>
+            </CardBody>
+          </Card>
           
-          {!provider && (
-            <Text color="red.500" fontSize="sm">
-              Connect your wallet to create a tournament
-            </Text>
-          )}
+          {/* Submit Section */}
+          <Card variant="outline">
+            <CardBody p={6}>
+              <VStack gap={4} align="stretch">
+                <Button
+                  variant="solid"
+                  type="submit"
+                  size="lg"
+                  loading={isSubmitting}
+                  loadingText="Creating Tournament..."
+                  disabled={!provider}
+                  w="100%"
+                >
+                  Create Tournament
+                </Button>
+                
+                {!provider && (
+                  <Text color="error.500" fontSize="sm" textAlign="center">
+                    Connect your wallet to create a tournament
+                  </Text>
+                )}
+              </VStack>
+            </CardBody>
+          </Card>
         </VStack>
       </form>
     </Box>

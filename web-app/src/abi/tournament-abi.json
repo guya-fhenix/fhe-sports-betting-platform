@@ -53,6 +53,36 @@
     "type": "constructor"
   },
   {
+    "inputs": [],
+    "name": "BettingOpportunityDoesNotExist",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CannotUpdateTimingAfterBettingStarted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EndTimeMustBeAfterStartTime",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EndTimeMustBeGreaterThanZero",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OnlyPlatformAdmin",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ResultsAlreadyFinalized",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "int32",
@@ -61,6 +91,31 @@
       }
     ],
     "name": "SecurityZoneOutOfBounds",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "StartTimeMustBeGreaterThanZero",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "StartTimeMustBeInFuture",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "StartTimeMustBeSetBeforeResults",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentNotStarted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
     "type": "error"
   },
   {

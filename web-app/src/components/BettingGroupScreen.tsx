@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
-  Button,
+  Button as ChakraButton,
   Flex,
   Heading,
   HStack,
@@ -12,10 +12,9 @@ import {
   VStack,
   Input,
   Dialog,
-
-  Badge,
   Wrap,
-  WrapItem
+  WrapItem,
+  Field
 } from '@chakra-ui/react';
 import { FiArrowLeft, FiCheck, FiUser, FiLogOut, FiAlertTriangle, FiX } from 'react-icons/fi';
 import { ethers } from 'ethers';
@@ -23,10 +22,13 @@ import { getGroupByAddress } from '../services/api';
 import { BETTING_GROUP_ABI, TOURNAMENT_ABI } from '../config';
 import { formatBlockchainDateToLocal, getCurrentBlockchainTime } from '../utils/time';
 import { toaster } from './ui/toaster';
+import { Button } from './ui/button';
+import { Card, CardBody, CardHeader } from './ui/card';
+import { Badge } from './ui/badge';
 import type { Group } from '../types';
-// We'll use dynamic imports instead of static imports for cofhejs
-// import { cofhejs, Encryptable } from 'cofhejs/web';
-// import { FheTypes } from 'cofhejs/common';
+import { CopyAddress } from './ui/copy-address';
+// Static imports for cofhejs
+import { cofhejs, Encryptable } from 'cofhejs/web';
 
 // Define types for betting opportunities and user bets
 interface BettingOpportunity {
@@ -75,9 +77,8 @@ const BettingGroupScreen = () => {
   const [encryptionState, setEncryptionState] = useState<string>('');
   const [isCofhejsInitialized, setIsCofhejsInitialized] = useState(false);
   
-  // Reference to provider and signer
+  // Reference to provider
   const providerRef = useRef<ethers.BrowserProvider | null>(null);
-  const cofhejsRef = useRef<any>(null);
   
   // Try to access parent component context if available
   const drawerContext = (window as any).__drawerContext;
@@ -97,19 +98,24 @@ const BettingGroupScreen = () => {
     console.log("Initializing cofhejs");
 
     try {
-      // Dynamically import cofhejs
-      const cofhejsModule = await import('cofhejs/web');
       const signer = await providerRef.current.getSigner();
       
+      console.log("signer", signer);
+      console.log("providerRef.current", providerRef.current);
+
       // Initialize cofhejs with ethers
-      await cofhejsModule.cofhejs.initializeWithEthers({
+      const result = await cofhejs.initializeWithEthers({
         ethersProvider: providerRef.current,
         ethersSigner: signer,
         environment: "MOCK"
       });
-      
-      // Store reference
-      cofhejsRef.current = cofhejsModule;
+
+      console.log("init results", result);
+      if (!result.success) {
+        console.error("Failed to initialize cofhejs", result.error.message);
+      }
+
+      console.log("cofhejs.store.getState()", cofhejs.store.getState());
       
       setIsCofhejsInitialized(true);
       console.log("Cofhejs initialized successfully");
@@ -187,6 +193,10 @@ const BettingGroupScreen = () => {
         BETTING_GROUP_ABI,
         providerRef.current
       );
+
+      console.log("userAddress", userAddress);
+      console.log("groupAddress", groupAddress);
+      console.log("checking if user is registered");
       
       const registered = await contract.isRegistered(userAddress);
       setIsUserRegistered(registered);
@@ -256,15 +266,29 @@ const BettingGroupScreen = () => {
     if (!groupAddress || !providerRef.current || !isUserRegistered) return;
     
     try {
+      const signer = await providerRef.current.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      console.log("=== FETCH USER BETS (Frontend) ===");
+      console.log("User address (will be passed as parameter):", userAddress);
+      console.log("Group address:", groupAddress);
+      console.log("About to call getParticipantBets with user address...");
+      
       const contract = new ethers.Contract(
         groupAddress,
         BETTING_GROUP_ABI,
         providerRef.current
       );
+
+      console.log("Contract instance created, calling getParticipantBets with address:", userAddress);
       
-      // Get user bets
-      const [betIds, betsData] = await contract.getParticipantBets();
-      
+      // Get user bets - now passing userAddress as parameter
+      const [betIds, betsData] = await contract.getParticipantBets(userAddress);
+
+      console.log("getParticipantBets returned successfully");
+      console.log("Bet IDs:", betIds);
+      console.log("Bets data:", betsData);
+
       // Store the bet IDs that the user has placed
       const betIdNumbers = betIds.map((id: any) => Number(id));
       setUserBetIds(betIdNumbers);
@@ -305,6 +329,7 @@ const BettingGroupScreen = () => {
         });
         
         setBets(formattedBets);
+        console.log("Formatted bets:", formattedBets);
       }
     } catch (error) {
       console.error('Error fetching bets:', error);
@@ -313,7 +338,7 @@ const BettingGroupScreen = () => {
   
   // Place a bet on a betting opportunity
   const placeBet = async (betId: number, optionIndex: number) => {
-    if (!groupAddress || !providerRef.current || !isCofhejsInitialized || !isUserRegistered || !cofhejsRef.current) return;
+    if (!groupAddress || !providerRef.current || !isCofhejsInitialized || !isUserRegistered) return;
     
     // Show initial toast
     const loadingToastId = toaster.create({
@@ -336,12 +361,10 @@ const BettingGroupScreen = () => {
         });
       };
       
-      // Get cofhejs and Encryptable from ref
-      const { cofhejs, Encryptable } = cofhejsRef.current;
-      
       // Encrypt the option index using cofhejs
       console.log("Cofhejs instance:", cofhejs);
-      const encryptedOption = await cofhejs.encrypt(logEncryptionState, [Encryptable.uint16(optionIndex)]);
+      console.log("Cofhejs state:", cofhejs.store.getState());
+      const encryptedOption = await cofhejs.encrypt(logEncryptionState, [Encryptable.uint16(BigInt(optionIndex))]);
       
       console.log("Encrypted option:", encryptedOption);
       
@@ -579,16 +602,16 @@ const BettingGroupScreen = () => {
   
   // Get group status
   const getGroupStatus = () => {
-    if (!group || !isActive) {
-      return <Box bg="red.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Inactive</Box>;
-    }
+    if (!group) return null;
     
     const now = getCurrentBlockchainTime();
     
-    if (now < group.registrationEndTime) {
-      return <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Registration Open</Box>;
+    if (!isActive) {
+      return <Badge variant="ended">Inactive</Badge>;
+    } else if (now < group.registrationEndTime) {
+      return <Badge variant="upcoming">Registration Open</Badge>;
     } else {
-      return <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">In Progress</Box>;
+      return <Badge variant="active">Active</Badge>;
     }
   };
 
@@ -632,8 +655,8 @@ const BettingGroupScreen = () => {
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="400px">
-        <VStack>
-          <Spinner size="xl" color="teal.500" />
+        <VStack gap={4}>
+          <Spinner size="xl" color="brand.500" />
           <Text color="gray.500">Loading betting group...</Text>
         </VStack>
       </Flex>
@@ -642,288 +665,308 @@ const BettingGroupScreen = () => {
   
   if (!group) {
     return (
-      <Box p={8}>
-        <Heading size="md" textAlign="center">Betting group not found</Heading>
-      </Box>
+      <Card variant="outline" maxW="md" mx="auto" mt={8}>
+        <CardBody p={8}>
+          <VStack gap={4}>
+            <Heading size="md" textAlign="center" color="gray.700">Betting group not found</Heading>
+            <Button variant="outline" onClick={goBackToTournament}>
+              <Icon as={FiArrowLeft} mr={2} />
+              Back to Tournament
+            </Button>
+          </VStack>
+        </CardBody>
+      </Card>
     );
   }
   
   return (
-    <Box p={6} color="gray.700">
-      {/* Group header */}
-      <VStack align="stretch" gap={6} mb={8}>
-        <HStack justify="space-between" wrap="wrap">
-          <HStack>
-            <Button 
-              aria-label="Back to Tournament"
-              variant="ghost" 
-              onClick={goBackToTournament} 
-              size="md"
-              borderRadius="full"
-              p={0}
-            >
-              <Icon as={FiArrowLeft} boxSize={5} />
-            </Button>
-            <Heading size="lg">{group.description}</Heading>
-          </HStack>
-          {getGroupStatus()}
-        </HStack>
-        
-        <Box>
-          <Text fontSize="sm" color="gray.500" mb={2}>Group Address:</Text>
-          <Text fontSize="sm" fontFamily="monospace" p={2} bg="gray.100" borderRadius="md">
-            {group.address}
-          </Text>
-        </Box>
-        
-        <Box>
-          <Text fontSize="sm" color="gray.500" mb={2}>Tournament Address:</Text>
-          <Text fontSize="sm" fontFamily="monospace" p={2} bg="gray.100" borderRadius="md">
-            {group.tournamentAddress}
-          </Text>
-        </Box>
-        
-        <HStack justify="space-between" wrap="wrap">
-          <Box>
-            <Text fontWeight="bold">Registration Ends:</Text>
-            <Text>{formatDate(group.registrationEndTime)}</Text>
-          </Box>
-          <Box>
-            <Text fontWeight="bold">Prize Distribution:</Text>
-            <Text>{group.prizeDistribution.map(value => (value / 10)).join(', ')}%</Text>
-          </Box>
-          <Box>
-            <Text fontWeight="bold">Closing Window:</Text>
-            <Text>{Math.round(group.generalClosingWindow / 60)} minutes</Text>
-          </Box>
-        </HStack>
-        
-        <Box borderTop="1px" borderColor="gray.200" pt={4} />
-      </VStack>
-      
-      {/* Registration section */}
-      {isActive && !isUserRegistered && (
-        <Box p={6} bg="gray.50" borderRadius="md" mb={8}>
-          <Heading size="md" mb={4}>Register for this Betting Group</Heading>
-          
-          <Box mb={4}>
-            <Text as="label" fontWeight="medium" mb={2} display="block">
-              Your Name
-            </Text>
-            <Input 
-              placeholder="Enter your name" 
-              value={userName} 
-              onChange={(e) => setUserName(e.target.value)}
-              disabled={isRegistering}
-            />
-          </Box>
-          
-          <HStack>
-            {/* We'll show entry fee from contract data */}
-            <Button
-              colorScheme="teal"
-              loading={isRegistering}
-              onClick={registerForGroup}
-              disabled={!userName.trim() || !providerRef.current}
-            >
-              <HStack>
-                <Icon as={FiUser} />
-                <Text>Register</Text>
+    <VStack align="stretch" gap={8} w="100%">
+      {/* Group Header */}
+      <Card variant="elevated">
+        <CardBody p={6}>
+          <VStack align="stretch" gap={6}>
+            <HStack justify="space-between" wrap="wrap" gap={4}>
+              <HStack gap={3}>
+                <Button 
+                  variant="ghost" 
+                  onClick={goBackToTournament} 
+                  size="md"
+                  p={2}
+                >
+                  <Icon as={FiArrowLeft} boxSize={5} />
+                </Button>
+                <Heading size="xl" color="gray.800">{group.description}</Heading>
               </HStack>
-            </Button>
-          </HStack>
-        </Box>
-      )}
-      
-      {isUserRegistered && (
-        <Box p={6} bg="green.50" borderRadius="md" mb={8}>
-          <HStack justify="space-between" wrap={{ base: "wrap", md: "nowrap" }}>
-            <HStack>
-              <Icon as={FiCheck} color="green.500" boxSize={6} />
-              <Heading size="md">You are registered for this betting group</Heading>
+              {getGroupStatus()}
             </HStack>
             
-            {/* Withdraw button - Only show if tournament hasn't started yet and group is active */}
-            {isActive && !tournamentStarted && (
-              <Button
-                colorScheme="red"
-                // variant="outline"
-                size="sm"
-                onClick={openDialog}
-                mt={{ base: 4, md: 0 }}
-              >
-                <HStack>
-                  <Icon as={FiLogOut} />
-                  <Text>Withdraw Registration</Text>
-                </HStack>
-              </Button>
-            )}
-          </HStack>
-        </Box>
-      )}
-      
-      {/* Participants section */}
-      <Box mt={6}>
-        <Heading size="md" mb={4}>Participants ({participantCount})</Heading>
-        
-        <Box p={4} bg="gray.50" borderRadius="md" textAlign="center">
-          <Text>
-            {participantCount} participants have registered for this betting group
-          </Text>
-        </Box>
-      </Box>
-      
-      {/* All betting opportunities section - only shown if user is registered */}
-      {isUserRegistered && (
-        <Box mt={6}>
-          <Heading size="md" mb={4}>Betting Opportunities</Heading>
-          
-          {bettingOpportunities.length === 0 ? (
-            <Box p={4} bg="gray.50" borderRadius="md" textAlign="center">
-              <Text color="gray.500">No betting opportunities available for this tournament</Text>
-            </Box>
-          ) : (
-            <VStack align="stretch" gap={3}>
-              {bettingOpportunities.map((opportunity) => {
-                const hasPlacedBet = hasBetBeenPlaced(opportunity.id);
-                // const canPlaceBet = !hasPlacedBet && isBettingWindowOpen(opportunity);
-                const canPlaceBet = true;
-                const userBet = bets.find(bet => bet.id === opportunity.id);
-                
-                return (
-                  <Box 
-                    key={opportunity.id} 
-                    p={3} 
-                    borderWidth="1px" 
-                    borderRadius="md" 
-                    bg={hasPlacedBet ? "teal.50" : "white"}
-                    borderColor={hasPlacedBet ? "teal.200" : "gray.200"}
-                  >
-                    <HStack justify="space-between" mb={2}>
-                      <HStack>
-                        <Text fontWeight="bold">{opportunity.description}</Text>
-                        {hasPlacedBet && (
-                          <Badge colorScheme="teal" variant="subtle">Bet Placed</Badge>
-                        )}
-                      </HStack>
-                      <HStack>
-                        {opportunity.startTime > 0 ? (
-                          <Text fontSize="sm" color="gray.600">
-                            Starts: {formatDate(opportunity.startTime)}
-                          </Text>
-                        ) : (
-                          <Text fontSize="sm" color="gray.600">
-                            Start time not set
-                          </Text>
-                        )}
-                        {opportunity.resultsFinalized ? (
-                          <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Results In</Box>
-                        ) : opportunity.startTime > 0 ? (
-                          <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>
-                        ) : (
-                          <Box bg="gray.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Not Started</Box>
-                        )}
-                      </HStack>
-                    </HStack>
-                    
-                    {/* Show options as buttons if betting is available */}
-                    <Box mt={2}>
-                      <Text fontSize="sm" fontWeight="medium" mb={2}>Options:</Text>
-                      {canPlaceBet ? (
-                        // Render as clickable buttons for placing bets
-                        <Wrap gap={2}>
-                          {opportunity.options.map((option, index) => (
-                            <WrapItem key={index}>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                colorScheme="teal"
-                                loading={isPlacingBet && placingBetId === opportunity.id}
-                                loadingText={encryptionState || "Placing..."}
-                                onClick={() => placeBet(opportunity.id, index)}
-                                disabled={!isCofhejsInitialized}
-                              >
-                                {option}
-                              </Button>
-                            </WrapItem>
-                          ))}
-                        </Wrap>
-                      ) : (
-                        // Render as non-clickable tags
-                        <HStack flexWrap="wrap" gap={2}>
-                          {opportunity.options.map((option, index) => (
-                            <Box 
-                              key={index} 
-                              px={3} 
-                              py={1} 
-                              bg="gray.100" 
-                              borderRadius="full"
-                              fontSize="sm"
-                            >
-                              {option}
-                            </Box>
-                          ))}
-                        </HStack>
-                      )}
-                      
-                      {/* Show message if betting window closed */}
-                      {!canPlaceBet && !hasPlacedBet && opportunity.startTime > 0 && (
-                        <Text fontSize="sm" color="orange.500" mt={2}>
-                          Betting window closed for this opportunity
-                        </Text>
-                      )}
-                      
-                      {/* Show message if cofhejs not initialized */}
-                      {canPlaceBet && !isCofhejsInitialized && (
-                        <Text fontSize="sm" color="red.500" mt={2}>
-                          Encryption setup required. Please refresh and try again.
-                        </Text>
-                      )}
-                    </Box>
-                    
-                    {/* Show user's bet details if they've placed a bet on this opportunity */}
-                    {hasPlacedBet && userBet && (
-                      <Box mt={3} p={3} bg="teal.50" borderRadius="md">
-                        <VStack align="stretch" gap={1}>
-                          <Text fontSize="sm" fontWeight="medium">Your Bet:</Text>
-                          <HStack justify="space-between">
-                            <Text fontSize="sm">Prediction:</Text>
-                            <Text fontSize="sm" fontFamily="monospace">
-                              {formatEncryptedValue(userBet.predictedOption)}
-                            </Text>
-                          </HStack>
-                          <HStack justify="space-between">
-                            <Text fontSize="sm">Points Awarded:</Text>
-                            <Text fontSize="sm" fontFamily="monospace">
-                              {formatEncryptedValue(userBet.pointsAwarded)}
-                            </Text>
-                          </HStack>
-                        </VStack>
-                      </Box>
-                    )}
-                    
-                    {opportunity.resultsFinalized && (
-                      <HStack bg="blue.50" p={2} borderRadius="md" mt={2}>
-                        <Text fontWeight="bold">Result:</Text>
-                        <Text>{opportunity.options[opportunity.result || 0]}</Text>
-                      </HStack>
-                    )}
-                  </Box>
-                );
-              })}
+            <VStack align="stretch" gap={4}>
+              <CopyAddress 
+                address={group.address}
+                label="Group Address"
+                fontSize="sm"
+                variant="default"
+              />
+              
+              <CopyAddress 
+                address={group.tournamentAddress}
+                label="Tournament Address"
+                fontSize="sm"
+                variant="default"
+              />
             </VStack>
-          )}
-        </Box>
+            
+            <HStack justify="space-between" wrap="wrap" gap={6}>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>Registration Ends</Text>
+                <Text fontSize="lg" color="gray.800">{formatDate(group.registrationEndTime)}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>Prize Distribution</Text>
+                <Text fontSize="lg" color="gray.800">{group.prizeDistribution.map(value => (value / 10)).join(', ')}%</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>Closing Window</Text>
+                <Text fontSize="lg" color="gray.800">{Math.round(group.generalClosingWindow / 60)} minutes</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>Participants</Text>
+                <Text fontSize="lg" color="gray.800">{participantCount}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>Prize Pool</Text>
+                <Text fontSize="lg" color="brand.600" fontWeight="bold">{prizePool} ETH</Text>
+              </Box>
+            </HStack>
+          </VStack>
+        </CardBody>
+      </Card>
+      
+      {/* Registration Section */}
+      {isActive && !isUserRegistered && (
+        <Card variant="outline">
+          <CardHeader>
+            <Heading size="lg" color="gray.800">Register for this Betting Group</Heading>
+          </CardHeader>
+          <CardBody>
+            <VStack align="stretch" gap={6}>
+              <Field.Root>
+                <Field.Label fontWeight="medium" color="gray.700">
+                  Your Name
+                </Field.Label>
+                <Input 
+                  placeholder="Enter your name" 
+                  value={userName} 
+                  onChange={(e) => setUserName(e.target.value)}
+                  disabled={isRegistering}
+                  size="lg"
+                />
+              </Field.Root>
+              
+              <Button
+                variant="solid"
+                size="lg"
+                loading={isRegistering}
+                onClick={registerForGroup}
+                disabled={!userName.trim() || !providerRef.current}
+                w="fit-content"
+              >
+                <Icon as={FiUser} mr={2} />
+                Register for Group
+              </Button>
+            </VStack>
+          </CardBody>
+        </Card>
       )}
       
-      {/* Prize Pool section */}
-      <Box mt={6}>
-        <Heading size="md" mb={4}>Prize Pool</Heading>
-        <Box p={4} bg="teal.50" borderRadius="md" textAlign="center">
-          <Heading size="lg" color="teal.600">{prizePool} ETH</Heading>
-        </Box>
-      </Box>
-
+      {/* Registration Success */}
+      {isUserRegistered && (
+        <Card variant="outline" borderColor="success.200" bg="success.50">
+          <CardBody p={6}>
+            <HStack justify="space-between" wrap={{ base: "wrap", md: "nowrap" }} gap={4}>
+              <HStack gap={3}>
+                <Icon as={FiCheck} color="success.500" boxSize={6} />
+                <Heading size="md" color="success.700">You are registered for this betting group</Heading>
+              </HStack>
+              
+              {/* Withdraw button - Only show if tournament hasn't started yet and group is active */}
+              {isActive && !tournamentStarted && (
+                <Button
+                  variant="error"
+                  size="sm"
+                  onClick={openDialog}
+                >
+                  <Icon as={FiLogOut} mr={2} />
+                  Withdraw Registration
+                </Button>
+              )}
+            </HStack>
+          </CardBody>
+        </Card>
+      )}
+      
+      {/* Betting Opportunities Section */}
+      {isUserRegistered && (
+        <Card variant="default">
+          <CardHeader>
+            <Heading size="lg" color="gray.800">Bets</Heading>
+          </CardHeader>
+          <CardBody>
+            {bettingOpportunities.length === 0 ? (
+              <Box textAlign="center" py={12}>
+                <Text color="gray.500" fontSize="lg">
+                  No betting opportunities available for this tournament
+                </Text>
+                <Text color="gray.400" fontSize="sm" mt={2}>
+                  Check back later for betting opportunities
+                </Text>
+              </Box>
+            ) : (
+              <VStack align="stretch" gap={4}>
+                {bettingOpportunities.map((opportunity) => {
+                  const hasPlacedBet = hasBetBeenPlaced(opportunity.id);
+                  const canPlaceBet = true;
+                  const userBet = bets.find(bet => bet.id === opportunity.id);
+                  
+                  return (
+                    <Card 
+                      key={opportunity.id} 
+                      variant={hasPlacedBet ? "betting" : "outline"}
+                      bg={hasPlacedBet ? "success.50" : "white"}
+                      borderColor={hasPlacedBet ? "success.200" : "gray.200"}
+                    >
+                      <CardBody p={6}>
+                        <VStack align="stretch" gap={4}>
+                          <HStack justify="space-between" align="start">
+                            <HStack gap={3}>
+                              <Heading size="md" color="gray.800" flex="1">
+                                {opportunity.description}
+                              </Heading>
+                              {hasPlacedBet && (
+                                <Badge variant="success">Bet Placed</Badge>
+                              )}
+                            </HStack>
+                            <VStack align="end" gap={2}>
+                              {opportunity.startTime > 0 ? (
+                                <Text fontSize="sm" color="gray.600" fontWeight="medium">
+                                  Starts: {formatDate(opportunity.startTime)}
+                                </Text>
+                              ) : (
+                                <Text fontSize="sm" color="gray.600" fontWeight="medium">
+                                  Start time not set
+                                </Text>
+                              )}
+                              {opportunity.resultsFinalized ? (
+                                <Badge variant="success">Results In</Badge>
+                              ) : opportunity.startTime > 0 ? (
+                                <Badge variant="active">Active</Badge>
+                              ) : (
+                                <Badge variant="ended">Not Started</Badge>
+                              )}
+                            </VStack>
+                          </HStack>
+                          
+                          {/* Betting Options */}
+                          <Box>
+                            <Text fontSize="sm" fontWeight="semibold" mb={3} color="gray.700">
+                              Betting Options:
+                            </Text>
+                            {canPlaceBet ? (
+                              <Wrap gap={3}>
+                                {opportunity.options.map((option, index) => (
+                                  <WrapItem key={index}>
+                                    <Button
+                                      size="md"
+                                      variant="outline"
+                                      loading={isPlacingBet && placingBetId === opportunity.id}
+                                      loadingText={encryptionState || "Placing..."}
+                                      onClick={() => placeBet(opportunity.id, index)}
+                                      disabled={!isCofhejsInitialized}
+                                    >
+                                      {option}
+                                    </Button>
+                                  </WrapItem>
+                                ))}
+                              </Wrap>
+                            ) : (
+                              <HStack flexWrap="wrap" gap={3}>
+                                {opportunity.options.map((option, index) => (
+                                  <Badge 
+                                    key={index} 
+                                    variant="outline"
+                                    px={3}
+                                    py={2}
+                                    fontSize="sm"
+                                  >
+                                    {option}
+                                  </Badge>
+                                ))}
+                              </HStack>
+                            )}
+                            
+                            {/* Status Messages */}
+                            {!canPlaceBet && !hasPlacedBet && opportunity.startTime > 0 && (
+                              <Text fontSize="sm" color="warning.500" mt={3} fontWeight="medium">
+                                Betting window closed for this opportunity
+                              </Text>
+                            )}
+                            
+                            {canPlaceBet && !isCofhejsInitialized && (
+                              <Text fontSize="sm" color="error.500" mt={3} fontWeight="medium">
+                                Encryption setup required. Please refresh and try again.
+                              </Text>
+                            )}
+                          </Box>
+                          
+                          {/* User's Bet Details */}
+                          {hasPlacedBet && userBet && (
+                            <Card variant="outline" bg="success.25" borderColor="success.300">
+                              <CardBody p={4}>
+                                <VStack align="stretch" gap={3}>
+                                  <Text fontSize="sm" fontWeight="semibold" color="success.700">
+                                    Your Bet Details:
+                                  </Text>
+                                  <HStack justify="space-between">
+                                    <Text fontSize="sm" color="gray.600">Prediction:</Text>
+                                    <Text fontSize="sm" fontFamily="mono" color="gray.800">
+                                      {formatEncryptedValue(userBet.predictedOption)}
+                                    </Text>
+                                  </HStack>
+                                  <HStack justify="space-between">
+                                    <Text fontSize="sm" color="gray.600">Points Awarded:</Text>
+                                    <Text fontSize="sm" fontFamily="mono" color="gray.800">
+                                      {formatEncryptedValue(userBet.pointsAwarded)}
+                                    </Text>
+                                  </HStack>
+                                </VStack>
+                              </CardBody>
+                            </Card>
+                          )}
+                          
+                          {/* Results */}
+                          {opportunity.resultsFinalized && (
+                            <Card variant="outline" bg="brand.50" borderColor="brand.200">
+                              <CardBody p={4}>
+                                <HStack gap={3}>
+                                  <Text fontWeight="semibold" color="brand.700">Final Result:</Text>
+                                  <Text color="brand.800" fontWeight="bold">
+                                    {opportunity.options[opportunity.result || 0]}
+                                  </Text>
+                                </HStack>
+                              </CardBody>
+                            </Card>
+                          )}
+                        </VStack>
+                      </CardBody>
+                    </Card>
+                  );
+                })}
+              </VStack>
+            )}
+          </CardBody>
+        </Card>
+      )}
+      
       {/* Withdraw Confirmation Dialog */}
       <Dialog.Root open={dialogOpen} onOpenChange={({ open }) => setDialogOpen(open)}>
         <Dialog.Backdrop />
@@ -944,17 +987,15 @@ const BettingGroupScreen = () => {
             </Dialog.Header>
             <Dialog.Body>
               <VStack align="stretch" gap={4}>
-                <Box>
-                  <HStack>
-                    <Icon as={FiAlertTriangle} color="orange.500" boxSize={6} />
-                    <Text fontWeight="bold">Are you sure you want to withdraw?</Text>
-                  </HStack>
-                </Box>
-                <Text>
+                <HStack gap={3}>
+                  <Icon as={FiAlertTriangle} color="warning.500" boxSize={6} />
+                  <Text fontWeight="bold" color="gray.800">Are you sure you want to withdraw?</Text>
+                </HStack>
+                <Text color="gray.700">
                   You will be removed from this betting group and your entry fee will be refunded.
                   All your bets will be deleted.
                 </Text>
-                <Text fontWeight="bold">
+                <Text fontWeight="bold" color="error.600">
                   This action cannot be undone once the tournament starts.
                 </Text>
               </VStack>
@@ -962,7 +1003,7 @@ const BettingGroupScreen = () => {
             <Dialog.Footer>
               <Button variant="outline" onClick={closeDialog}>Cancel</Button>
               <Button 
-                colorScheme="red" 
+                variant="error" 
                 onClick={withdrawFromBettingGroup}
                 loading={isWithdrawing}
                 loadingText="Withdrawing"
@@ -974,7 +1015,7 @@ const BettingGroupScreen = () => {
           </Dialog.Content>
         </Dialog.Positioner>
       </Dialog.Root>
-    </Box>
+    </VStack>
   );
 };
 

@@ -1,5 +1,6 @@
 {
   "FACTORY_CONTRACT_ADDRESS": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
   "networkName": "localhost",
-  "deploymentTime": "2025-05-22T11:35:30.641Z"
+  "rpcUrl": "http://localhost:8545",
+  "deploymentTime": "2025-05-25T15:27:57.882Z"
 }

@@ -5,12 +5,15 @@ import {
   Text,
   Heading,
   VStack,
-  Badge,
+  Badge as ChakraBadge,
   Spinner,
-  Button
+  Button as ChakraButton
 } from '@chakra-ui/react';
 import { API_BASE_URL } from '../config';
 import { io, Socket } from 'socket.io-client';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Card, CardBody, CardHeader } from './ui/card';
 
 // Define the event type that will come from Socket.IO
 interface CloudEvent {
@@ -191,15 +194,15 @@ const EventLog = ({ isOpen, onClose }: EventLogProps) => {
   const getEventBadge = (type: string) => {
     switch (type) {
       case 'tournament':
-        return <Badge colorScheme="green">Tournament</Badge>;
+        return <Badge variant="success">Tournament</Badge>;
       case 'group':
-        return <Badge colorScheme="blue">Group</Badge>;
+        return <Badge variant="betting">Group</Badge>;
       case 'block':
-        return <Badge colorScheme="purple">Block</Badge>;
+        return <Badge variant="outline">Block</Badge>;
       case 'system':
-        return <Badge colorScheme="gray">System</Badge>;
+        return <Badge variant="ended">System</Badge>;
       default:
-        return <Badge>Event</Badge>;
+        return <Badge variant="solid">Event</Badge>;
     }
   };
   
@@ -212,77 +215,135 @@ const EventLog = ({ isOpen, onClose }: EventLogProps) => {
   
   return (
     <Box
-      width="350px"
-      minWidth="350px"
-      maxWidth="350px"
-      height="calc(100vh - 72px)" // Subtract header height
-      bg={bgColor}
-      borderLeft="1px"
-      borderColor={borderColor}
-      overflow="hidden"
+      w="100%"
+      h="100%"
+      minH="100%"
+      maxH="100%"
+      bg="white"
       display="flex"
       flexDirection="column"
+      overflow="hidden"
     >
-      <Flex 
+      {/* Fixed Header - Event Log Title and Connection Status */}
+      <Box 
         p={4} 
-        borderBottom="1px" 
-        borderColor={borderColor} 
-        justify="space-between" 
-        align="center"
+        borderBottom="1px solid" 
+        borderColor="gray.200"
+        bg="gray.50"
+        flexShrink={0}
+        w="100%"
+        overflow="hidden"
       >
-        <Heading size="md" color="gray.700">Event Log</Heading>
-        <Flex align="center" gap={2}>
-          {isConnected ? (
-            <Badge colorScheme="green">Connected</Badge>
-          ) : (
-            <Badge colorScheme="red">Disconnected</Badge>
-          )}
+        <Flex justify="space-between" align="center" w="100%">
+          <Heading 
+            size="md" 
+            color="gray.800" 
+            overflow="hidden"
+            textOverflow="ellipsis"
+            whiteSpace="nowrap"
+          >
+            Event Log
+          </Heading>
+          <Flex align="center" gap={2} flexShrink={0}>
+            {isConnected ? (
+              <Badge variant="success">Connected</Badge>
+            ) : (
+              <Badge variant="error">Disconnected</Badge>
+            )}
+          </Flex>
         </Flex>
-      </Flex>
+      </Box>
       
-      {isConnecting ? (
-        <Flex justify="center" align="center" flex="1">
-          <Spinner size="lg" color="teal.500" />
-          <Text ml={3} color="gray.500">Connecting...</Text>
-        </Flex>
-      ) : !isConnected ? (
-        <Flex justify="center" align="center" flex="1" direction="column" gap={4}>
-          <Text>Not connected to event stream</Text>
-          <Button size="sm" colorScheme="teal" onClick={reconnect}>
-            Reconnect Now
-          </Button>
-        </Flex>
-      ) : (
-        <VStack 
-          flex="1" 
-          overflowY="auto" 
-          gap={0} 
-          align="stretch" 
-          ref={containerRef}
-          p={2}
-        >
-          {events.length === 0 ? (
-            <Flex justify="center" align="center" height="100%">
-              <Text color="gray.500">Waiting for events...</Text>
-            </Flex>
-          ) : (
-            events.map((event, index) => (
-              <Box key={event.id || index} p={2} _hover={{ bg: 'gray.50' }} color="gray.700">
-                <Flex justify="space-between" align="center" mb={1}>
-                  {getEventBadge(event.type)}
-                  <Text fontSize="xs" color="gray.500">
-                    {formatTimestamp(event.timestamp)}
-                  </Text>
-                </Flex>
-                <Text fontSize="sm">{event.message}</Text>
-                {index < events.length - 1 && (
-                  <Box height="1px" bg="gray.200" my={2} />
-                )}
-              </Box>
-            ))
-          )}
-        </VStack>
-      )}
+      {/* Scrollable Content Area - Only this section scrolls */}
+      <Box 
+        flex="1"
+        overflow="hidden"
+        position="relative"
+        w="100%"
+      >
+        {isConnecting ? (
+          <Flex justify="center" align="center" h="100%" direction="column" gap={4}>
+            <Spinner size="lg" color="brand.500" />
+            <Text color="gray.500" fontWeight="medium">Connecting to event stream...</Text>
+          </Flex>
+        ) : !isConnected ? (
+          <Flex justify="center" align="center" h="100%" direction="column" gap={6} p={6}>
+            <VStack gap={3} textAlign="center">
+              <Text color="gray.600" fontSize="lg">Not connected to event stream</Text>
+              <Text color="gray.500" fontSize="sm">
+                Unable to receive real-time blockchain events
+              </Text>
+            </VStack>
+            <Button variant="solid" onClick={reconnect}>
+              Reconnect Now
+            </Button>
+          </Flex>
+        ) : (
+          <Box 
+            h="100%"
+            w="100%"
+            overflowY="auto" 
+            overflowX="hidden"
+            ref={containerRef}
+            p={4}
+          >
+            {events.length === 0 ? (
+              <Flex justify="center" align="center" h="100%" direction="column" gap={3}>
+                <Text color="gray.500" fontSize="lg">Waiting for events...</Text>
+                <Text color="gray.400" fontSize="sm" textAlign="center">
+                  Blockchain events will appear here in real-time
+                </Text>
+              </Flex>
+            ) : (
+              <VStack 
+                gap={3} 
+                align="stretch" 
+                w="100%"
+                pb={4}
+              >
+                {events.map((event, index) => (
+                  <Card 
+                    key={event.id || index} 
+                    variant="outline" 
+                    _hover={{ 
+                      bg: 'gray.50',
+                      borderColor: 'brand.200',
+                      transform: 'translateY(-1px)',
+                      boxShadow: 'md'
+                    }}
+                    transition="all 0.2s ease"
+                    w="100%"
+                    minW={0}
+                    maxW="100%"
+                  >
+                    <CardBody p={4}>
+                      <VStack align="stretch" gap={3} w="100%">
+                        <Flex justify="space-between" align="center" w="100%">
+                          {getEventBadge(event.type)}
+                          <Text fontSize="xs" color="gray.500" fontWeight="medium" flexShrink={0}>
+                            {formatTimestamp(event.timestamp)}
+                          </Text>
+                        </Flex>
+                        <Text 
+                          fontSize="sm" 
+                          color="gray.700" 
+                          lineHeight="1.5"
+                          wordBreak="break-word"
+                          overflowWrap="break-word"
+                          w="100%"
+                          maxW="100%"
+                        >
+                          {event.message}
+                        </Text>
+                      </VStack>
+                    </CardBody>
+                  </Card>
+                ))}
+              </VStack>
+            )}
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 };

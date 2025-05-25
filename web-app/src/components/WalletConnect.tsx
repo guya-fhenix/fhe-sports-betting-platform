@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
-  Button, 
   Text, 
   HStack, 
   Box,
@@ -12,6 +11,7 @@ import {
 import { ethers } from 'ethers';
 import { FiChevronDown, FiLogOut, FiCopy } from 'react-icons/fi';
 import { toaster } from '../components/ui/toaster';
+import { Button } from './ui/button';
 
 interface WalletConnectProps {
   onConnect: (provider: ethers.BrowserProvider) => void;
@@ -204,7 +204,7 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
         <Menu.Root positioning={{ placement: "bottom" }}>
           <Menu.Trigger asChild padding={0}>
             <span>
-              <Button colorScheme="teal">
+              <Button variant="solid">
                 Wallet Connected <Icon ml={2}><FiChevronDown /></Icon>
               </Button>
             </span>
@@ -233,7 +233,7 @@ const WalletConnect = ({ onConnect }: WalletConnectProps) => {
         </Menu.Root>
       ) : (
         <Button
-          colorScheme="teal"
+          variant="solid"
           onClick={connectWallet}
           loading={connecting}
           loadingText="Connecting"

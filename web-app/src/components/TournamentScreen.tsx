@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
-  Button,
+  Button as ChakraButton,
   Flex,
   Grid,
   GridItem,
@@ -22,6 +22,9 @@ import { ethers } from 'ethers';
 import type { Tournament, Group } from '../types';
 import CreateGroup from './CreateGroup';
 import { toaster } from './ui/toaster';
+import { Button } from './ui/button';
+import { Card, CardBody, CardHeader } from './ui/card';
+import { Badge } from './ui/badge';
 import { TOURNAMENT_ABI } from '../config';
 import { 
   formatBlockchainDateToLocal, 
@@ -30,6 +33,7 @@ import {
   isTimestampInFuture,
   formatDateForLocalInput
 } from '../utils/time';
+import { CopyAddress } from './ui/copy-address';
 
 const TournamentScreen = () => {
   const navigate = useNavigate();
@@ -557,11 +561,11 @@ const TournamentScreen = () => {
     const now = getCurrentBlockchainTime();
     
     if (now < tournament.startTime) {
-      return <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Upcoming</Box>;
+      return <Badge variant="upcoming">Upcoming</Badge>;
     } else if (now <= tournament.endTime) {
-      return <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>;
+      return <Badge variant="active">Active</Badge>;
     } else {
-      return <Box bg="red.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Ended</Box>;
+      return <Badge variant="ended">Ended</Badge>;
     }
   };
   
@@ -647,80 +651,94 @@ const TournamentScreen = () => {
   const renderBettingOpportunities = () => {
     if (opportunitiesLoading) {
       return (
-        <Flex justify="center" py={4}>
-          <Spinner size="md" color="teal.500" />
+        <Flex justify="center" py={8}>
+          <VStack gap={3}>
+            <Spinner size="lg" color="brand.500" />
+            <Text color="gray.500">Loading betting opportunities...</Text>
+          </VStack>
         </Flex>
       );
     }
     
     if (bettingOpportunities.length === 0) {
-      return <Text color="gray.500">No betting opportunities available</Text>;
+      return (
+        <Card variant="outline">
+          <CardBody p={8}>
+            <Text color="gray.500" textAlign="center">No betting opportunities available</Text>
+          </CardBody>
+        </Card>
+      );
     }
     
     return (
-      <VStack align="stretch" gap={3}>
+      <VStack align="stretch" gap={4}>
         {bettingOpportunities.map((opportunity) => (
-          <Box key={opportunity.id} p={3} borderWidth="1px" borderRadius="md">
-            <HStack justify="space-between" mb={2}>
-              <Text fontWeight="bold">{opportunity.description}</Text>
-              <HStack>
-                {opportunity.startTime > 0 ? (
-                  <Button
-                    size="xs"
-                    onClick={() => canUpdateStartTime(opportunity) && handleStartTimeClick(opportunity)}
-                    disabled={!canUpdateStartTime(opportunity)}
-                    title={canUpdateStartTime(opportunity) ? "Click to update start time" : "Cannot update start time"}
-                    colorScheme={canUpdateStartTime(opportunity) ? "blue" : "gray"}
-                  >
-                    <Icon as={FiCalendar} mr={2} />
-                    {formatDate(opportunity.startTime)}
-                  </Button>
-                ) : (
-                  <Button
-                    size="xs"
-                    onClick={() => handleStartTimeClick(opportunity)}
-                    colorScheme="blue"
-                  >
-                    <Icon as={FiClock} mr={2} />
-                    Set Start Time
-                  </Button>
-                )}
-                {opportunity.resultsFinalized ? (
-                  <Box bg="green.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Results In</Box>
-                ) : opportunity.startTime > 0 ? (
-                  <Box bg="blue.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Active</Box>
-                ) : (
-                  <Box bg="gray.500" color="white" px={2} py={1} borderRadius="md" fontSize="sm">Not Started</Box>
-                )}
-              </HStack>
-            </HStack>
-            
-            <Grid templateColumns="repeat(8, 1fr)" gap={2} mt={2}>
-              {opportunity.options.map((option: string, idx: number) => (
-                <Button 
-                  key={idx}
-                  size="sm"
-                  onClick={() => !opportunity.resultsFinalized && setResults(opportunity.id, idx)}
-                  disabled={opportunity.resultsFinalized}
-                  cursor={opportunity.resultsFinalized ? "default" : "pointer"}
-                  // variant="outline"
-                  colorScheme={opportunity.resultsFinalized && opportunity.result === idx ? "green" : "gray"}
-                  p={2}
-                  h="auto"
-                  fontSize="sm"
-                  position="relative"
-                  _hover={!opportunity.resultsFinalized ? { bg: "blue.50" } : {}}
-                >
-                  {option}
-                  {opportunity.resultsFinalized && opportunity.result === idx && (
-                    <Text as="span" color="green.500" ml={1}>
-                      ✓
-                    </Text>
-                  )}
-                </Button>
-              ))}
-            </Grid>
-          </Box>
+          <Card key={opportunity.id} variant="betting">
+            <CardBody p={6}>
+              <VStack align="stretch" gap={4}>
+                <HStack justify="space-between" align="start">
+                  <Heading size="md" color="gray.800" flex="1">
+                    {opportunity.description}
+                  </Heading>
+                  <HStack gap={2}>
+                    {opportunity.startTime > 0 ? (
+                      <ChakraButton
+                        size="sm"
+                        variant={canUpdateStartTime(opportunity) ? "outline" : "ghost"}
+                        onClick={() => canUpdateStartTime(opportunity) && handleStartTimeClick(opportunity)}
+                        disabled={!canUpdateStartTime(opportunity)}
+                      >
+                        <Icon as={FiCalendar} mr={2} />
+                        {formatDate(opportunity.startTime)}
+                      </ChakraButton>
+                    ) : (
+                      <ChakraButton
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleStartTimeClick(opportunity)}
+                      >
+                        <Icon as={FiClock} mr={2} />
+                        Set Start Time
+                      </ChakraButton>
+                    )}
+                    {opportunity.resultsFinalized ? (
+                      <Badge variant="success">Results In</Badge>
+                    ) : opportunity.startTime > 0 ? (
+                      <Badge variant="active">Active</Badge>
+                    ) : (
+                      <Badge variant="ended">Not Started</Badge>
+                    )}
+                  </HStack>
+                </HStack>
+                
+                <Grid templateColumns="repeat(auto-fit, minmax(120px, 1fr))" gap={3}>
+                  {opportunity.options.map((option: string, idx: number) => (
+                    <ChakraButton 
+                      key={idx}
+                      size="md"
+                      variant={opportunity.resultsFinalized && opportunity.result === idx ? "solid" : "outline"}
+                      colorScheme={opportunity.resultsFinalized && opportunity.result === idx ? "green" : "gray"}
+                      onClick={() => !opportunity.resultsFinalized && setResults(opportunity.id, idx)}
+                      disabled={opportunity.resultsFinalized}
+                      cursor={opportunity.resultsFinalized ? "default" : "pointer"}
+                      h="auto"
+                      py={3}
+                      px={4}
+                      fontSize="sm"
+                      position="relative"
+                      whiteSpace="normal"
+                      textAlign="center"
+                    >
+                      {option}
+                      {opportunity.resultsFinalized && opportunity.result === idx && (
+                        <Icon as={FiCheck} ml={2} color="white" />
+                      )}
+                    </ChakraButton>
+                  ))}
+                </Grid>
+              </VStack>
+            </CardBody>
+          </Card>
         ))}
       </VStack>
     );
@@ -856,8 +874,8 @@ const TournamentScreen = () => {
   if (loading) {
     return (
       <Flex justify="center" align="center" minH="400px">
-        <VStack>
-          <Spinner size="xl" color="teal.500" />
+        <VStack gap={4}>
+          <Spinner size="xl" color="brand.500" />
           <Text color="gray.500">Loading tournament...</Text>
         </VStack>
       </Flex>
@@ -866,57 +884,72 @@ const TournamentScreen = () => {
   
   if (!tournament) {
     return (
-      <Box p={8}>
-        <Heading size="md" textAlign="center">Tournament not found</Heading>
-      </Box>
+      <Card variant="outline" maxW="md" mx="auto" mt={8}>
+        <CardBody p={8}>
+          <VStack gap={4}>
+            <Heading size="md" textAlign="center" color="gray.700">Tournament not found</Heading>
+            <Button variant="outline" onClick={goBackToList}>
+              <Icon as={FiArrowLeft} mr={2} />
+              Back to Tournaments
+            </Button>
+          </VStack>
+        </CardBody>
+      </Card>
     );
   }
   
   return (
-    <Box p={6} color={"gray.700"}>
-      {/* Tournament header */}
-      <VStack align="stretch" gap={6} mb={8}>
-        <HStack justify="space-between" wrap="wrap">
-          <HStack>
-            <Button 
-              aria-label="Back to Tournaments"
-              variant="ghost" 
-              onClick={goBackToList} 
-              size="md"
-              borderRadius="full"
-              p={0}
-            >
-              <Icon as={FiArrowLeft} boxSize={5} />
-            </Button>
-            <Heading size="lg">{tournament.description}</Heading>
-          </HStack>
-          {getTournamentStatus()}
-        </HStack>
-        
-        <Box>
-          <Text fontSize="sm" color="gray.500" mb={2}>Tournament Address:</Text>
-          <Text fontSize="sm" fontFamily="monospace" p={2} bg="gray.100" borderRadius="md">
-            {tournament.address}
-          </Text>
-        </Box>
-        
-        <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={4}>
-          <Box>
-            <Text fontWeight="bold">Start Time:</Text>
-            <Text>{formatDate(tournament.startTime)}</Text>
-          </Box>
-          <Box>
-            <Text fontWeight="bold">End Time:</Text>
-            <Text>{formatDate(tournament.endTime)}</Text>
-          </Box>
-        </Grid>
-        
-        {/* Betting Opportunities Section */}
-        <Box>
-          <HStack justify="space-between" mb={4}>
-            <Heading size="md">Bets ({tournament?.bettingOpportunitiesCount || 0})</Heading>
+    <VStack align="stretch" gap={8} w="100%">
+      {/* Tournament Header */}
+      <Card variant="elevated">
+        <CardBody p={6}>
+          <VStack align="stretch" gap={6}>
+            <HStack justify="space-between" wrap="wrap" gap={4}>
+              <HStack gap={3}>
+                <Button 
+                  variant="ghost" 
+                  onClick={goBackToList} 
+                  size="md"
+                  p={2}
+                >
+                  <Icon as={FiArrowLeft} boxSize={5} />
+                </Button>
+                <Heading size="xl" color="gray.800">{tournament.description}</Heading>
+              </HStack>
+              {getTournamentStatus()}
+            </HStack>
+            
+            <CopyAddress 
+              address={tournament.address}
+              label="Tournament Address"
+              fontSize="sm"
+              variant="default"
+            />
+            
+            <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={6}>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>Start Time</Text>
+                <Text fontSize="lg" color="gray.800">{formatDate(tournament.startTime)}</Text>
+              </Box>
+              <Box>
+                <Text fontWeight="semibold" color="gray.600" mb={1}>End Time</Text>
+                <Text fontSize="lg" color="gray.800">{formatDate(tournament.endTime)}</Text>
+              </Box>
+            </Grid>
+          </VStack>
+        </CardBody>
+      </Card>
+
+      {/* Betting Opportunities Section */}
+      <Card variant="default">
+        <CardHeader>
+          <HStack justify="space-between" align="center">
+            <Heading size="lg" color="gray.800">
+              Bets ({tournament?.bettingOpportunitiesCount || 0})
+            </Heading>
             <Button 
               size="sm" 
+              variant="outline"
               onClick={refreshBettingOpportunities}
               disabled={opportunitiesLoading}
             >
@@ -924,90 +957,111 @@ const TournamentScreen = () => {
               Refresh
             </Button>
           </HStack>
-          
+        </CardHeader>
+        <CardBody>
           {renderBettingOpportunities()}
-        </Box>
-        
-        <Box borderTop="1px" borderColor="gray.200" pt={4} />
-      </VStack>
+        </CardBody>
+      </Card>
       
-      {/* Groups section */}
-      <Box mt={6}>
-        <Flex justify="space-between" align="center" mb={4}>
-          <Heading size="md">Betting Groups</Heading>
-          <Button
-            colorScheme="teal"
-            onClick={openDrawer}
-            disabled={!canCreateGroup() || !providerRef.current}
-            borderWidth="1px"
-            borderColor="gray.500"
-            title={getCreateGroupButtonTooltip()}
-          >
-            <Icon as={FiPlus} mr={2} />
-            Create Betting Group
-          </Button>
-        </Flex>
-        
-        {groupsLoading ? (
-          <Flex justify="center" align="center" h="200px">
-            <Spinner size="lg" color="teal.500" />
-          </Flex>
-        ) : groups.length === 0 ? (
-          <Text textAlign="center" p={6} color="gray.500">
-            No betting groups found for this tournament
-          </Text>
-        ) : (
-          <Grid 
-            templateColumns={{
-              base: "1fr",
-              md: "repeat(2, 1fr)",
-              lg: "repeat(3, 1fr)"
-            }} 
-            gap={4}
-          >
-            {groups.map(group => (
-              <GridItem key={group.address}>
-                <Box 
-                  borderWidth="1px" 
-                  borderRadius="md" 
-                  p={4} 
-                  boxShadow="sm" 
-                  height="100%"
-                  onClick={() => navigate(`/tournaments/${tournament.address}/groups/${group.address}`)}
-                  cursor="pointer"
-                  transition="all 0.2s"
-                  _hover={{ transform: "translateY(-2px)", boxShadow: "md" }}
-                >
-                  <VStack align="stretch" gap={2}>
-                    <Heading size="sm">{group.description}</Heading>
-                    
-                    <Text fontSize="xs" color="gray.500" fontFamily="monospace" maxW="100%" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
-                      {group.address}
-                    </Text>
-                    
-                    <Box mt={2}>
-                      <Text fontSize="sm">
-                        <Text as="span" fontWeight="bold">Registration Ends: </Text>
-                        {formatDate(group.registrationEndTime)}
-                      </Text>
-                      
-                      <Text fontSize="sm">
-                        <Text as="span" fontWeight="bold">Prize Distribution: </Text>
-                        {group.prizeDistribution.map(value => (value / 10)).join(', ')}%
-                      </Text>
-                      
-                      <Text fontSize="sm">
-                        <Text as="span" fontWeight="bold">Closing Window: </Text>
-                        {Math.round(group.generalClosingWindow / 60)} minutes
-                      </Text>
-                    </Box>
-                  </VStack>
-                </Box>
-              </GridItem>
-            ))}
-          </Grid>
-        )}
-      </Box>
+      {/* Betting Groups Section */}
+      <Card variant="default">
+        <CardHeader>
+          <HStack justify="space-between" align="center">
+            <Heading size="lg" color="gray.800">Betting Groups</Heading>
+            <Button
+              variant="solid"
+              onClick={openDrawer}
+              disabled={!canCreateGroup() || !providerRef.current}
+            >
+              <Icon as={FiPlus} mr={2} />
+              Create Betting Group
+            </Button>
+          </HStack>
+        </CardHeader>
+        <CardBody>
+          {groupsLoading ? (
+            <Flex justify="center" align="center" py={12}>
+              <VStack gap={3}>
+                <Spinner size="lg" color="brand.500" />
+                <Text color="gray.500">Loading betting groups...</Text>
+              </VStack>
+            </Flex>
+          ) : groups.length === 0 ? (
+            <Box textAlign="center" py={12}>
+              <Text color="gray.500" fontSize="lg">
+                No betting groups found for this tournament
+              </Text>
+              <Text color="gray.400" fontSize="sm" mt={2}>
+                Create the first betting group to get started
+              </Text>
+            </Box>
+          ) : (
+            <Grid 
+              templateColumns={{
+                base: "1fr",
+                md: "repeat(2, 1fr)",
+                lg: "repeat(3, 1fr)"
+              }} 
+              gap={4}
+            >
+              {groups.map(group => (
+                <GridItem key={group.address}>
+                  <Card 
+                    variant="betting"
+                    cursor="pointer"
+                    onClick={() => navigate(`/tournaments/${tournament.address}/groups/${group.address}`)}
+                    h="full"
+                  >
+                    <CardBody p={5}>
+                      <VStack align="stretch" gap={4} h="full">
+                        <Heading size="md" color="gray.800" lineClamp={2}>
+                          {group.description}
+                        </Heading>
+                        
+                        <CopyAddress 
+                          address={group.address}
+                          label="Contract Address"
+                          fontSize="sm"
+                          variant="default"
+                        />
+                        
+                        <VStack align="stretch" gap={3} mt="auto">
+                          <HStack justify="space-between">
+                            <Text fontSize="sm" color="gray.500" fontWeight="medium">
+                              Registration Ends
+                            </Text>
+                            <Text fontSize="sm" color="gray.800" fontWeight="semibold">
+                              {formatDate(group.registrationEndTime)}
+                            </Text>
+                          </HStack>
+                          
+                          <HStack justify="space-between">
+                            <Text fontSize="sm" color="gray.500" fontWeight="medium">
+                              Prize Distribution
+                            </Text>
+                            <Text fontSize="sm" color="gray.800" fontWeight="semibold">
+                              {group.prizeDistribution.map(value => (value / 10)).join(', ')}%
+                            </Text>
+                          </HStack>
+                          
+                          <HStack justify="space-between">
+                            <Text fontSize="sm" color="gray.500" fontWeight="medium">
+                              Closing Window
+                            </Text>
+                            <Text fontSize="sm" color="gray.800" fontWeight="semibold">
+                              {Math.round(group.generalClosingWindow / 60)} minutes
+                            </Text>
+                          </HStack>
+                        </VStack>
+                      </VStack>
+                    </CardBody>
+                  </Card>
+                </GridItem>
+              ))}
+            </Grid>
+          )}
+        </CardBody>
+      </Card>
       
       {/* Create Group Drawer */}
       <Drawer.Root
@@ -1017,24 +1071,26 @@ const TournamentScreen = () => {
       >
         <Drawer.Backdrop />
         <Drawer.Positioner>
-          <Drawer.Content width="50vw" maxWidth="50vw" bg="gray.900">
-            <Drawer.Header borderBottomColor="whiteAlpha.300">
-              <Drawer.Title color="white">Create Betting Group</Drawer.Title>
+          <Drawer.Content width="50vw" maxWidth="50vw" bg="white">
+            <Drawer.Header borderBottom="1px solid" borderColor="gray.200" p={6}>
+              <Drawer.Title fontSize="xl" fontWeight="bold" color="gray.800">
+                Create Betting Group
+              </Drawer.Title>
               <Button 
                 size="sm" 
                 variant="ghost" 
                 onClick={closeDrawer} 
                 position="absolute" 
-                right="8px" 
-                top="8px"
-                color="white"
+                right={4} 
+                top={4}
+                p={2}
               >
                 <Icon>
                   <FiX />
                 </Icon>
               </Button>
             </Drawer.Header>
-            <Drawer.Body color="white">
+            <Drawer.Body p={6}>
               {tournament && (
                 <CreateGroup 
                   provider={providerRef.current} 
@@ -1047,7 +1103,7 @@ const TournamentScreen = () => {
         </Drawer.Positioner>
       </Drawer.Root>
       
-      {/* Confirmation using Dialog */}
+      {/* Confirmation Dialog */}
       <Dialog.Root 
         open={isDialogOpen} 
         onOpenChange={handleConfirmDialogOpenChange}>
@@ -1064,21 +1120,22 @@ const TournamentScreen = () => {
             
             {dialogData && (
               <Dialog.Body>
-                <Text mb={4}>
+                <Text mb={4} color="gray.700">
                   Are you sure you want to set the result for "{dialogData.description}" to:
                 </Text>
                 
-                <Box
-                  p={2}
-                  borderRadius="md"
-                  bg="blue.50"
-                  fontWeight="bold"
-                  textAlign="center"
-                  width="100%"
-                  mb={4}
-                >
-                  {dialogData.option}
-                </Box>
+                <Card variant="outline">
+                  <CardBody p={4}>
+                    <Text
+                      fontWeight="bold"
+                      textAlign="center"
+                      color="brand.600"
+                      fontSize="lg"
+                    >
+                      {dialogData.option}
+                    </Text>
+                  </CardBody>
+                </Card>
               </Dialog.Body>
             )}
             
@@ -1093,7 +1150,7 @@ const TournamentScreen = () => {
                 Cancel
               </Button>
               <Button 
-                colorScheme="blue" 
+                variant="solid" 
                 onClick={confirmSetResult}
                 ml={3}
               >
@@ -1107,7 +1164,7 @@ const TournamentScreen = () => {
       
       {/* Date Time Picker */}
       <DateTimePicker />
-    </Box>
+    </VStack>
   );
 };
 

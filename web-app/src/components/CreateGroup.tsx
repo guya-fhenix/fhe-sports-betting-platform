@@ -1,19 +1,23 @@
 import { useState } from 'react';
 import {
   Box,
-  Button,
+  Button as ChakraButton,
   Text,
   VStack,
   Input,
   Heading,
   HStack,
-  Icon
+  Icon,
+  Field
 } from '@chakra-ui/react';
 import { ethers } from 'ethers';
 import { createBettingGroup } from '../services/blockchain';
 import type { Tournament } from '../types';
 import { toaster } from './ui/toaster';
+import { Button } from './ui/button';
+import { Card, CardBody, CardHeader } from './ui/card';
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
+import { CopyAddress } from './ui/copy-address';
 
 interface CreateGroupProps {
   provider: ethers.BrowserProvider | null;
@@ -167,132 +171,207 @@ const CreateGroup = ({ provider, tournament, onSuccess }: CreateGroupProps) => {
   };
   
   return (
-    <Box maxW="800px" mx="auto" p={4}>
+    <Box maxW="800px" mx="auto">
       <form onSubmit={handleSubmit}>
-        <VStack gap={6} align="stretch">
-          <Box>
-            <Text mb={2}>Group Description</Text>
-            <Input 
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter betting group description"
-              required
-            />
-          </Box>
+        <VStack gap={8} align="stretch">
+          {/* Group Details */}
+          <Card variant="default">
+            <CardHeader>
+              <Heading size="lg" color="gray.800">Group Details</Heading>
+            </CardHeader>
+            <CardBody>
+              <VStack gap={6} align="stretch">
+                <Field.Root>
+                  <Field.Label fontWeight="medium" color="gray.700">Group Description</Field.Label>
+                  <Input 
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Enter betting group description"
+                    size="lg"
+                    required
+                  />
+                </Field.Root>
+                
+                <Box
+                  bg="gray.50"
+                  p={4}
+                  borderRadius="lg"
+                  border="1px solid"
+                  borderColor="gray.200"
+                >
+                  <Text fontSize="sm" color="gray.500" mb={2} fontWeight="medium">
+                    Tournament
+                  </Text>
+                  <Text fontWeight="semibold" color="gray.800" mb={3}>{tournament.description}</Text>
+                  <CopyAddress 
+                    address={tournament.address}
+                    label="Tournament Address"
+                    fontSize="sm"
+                    variant="default"
+                  />
+                </Box>
+              </VStack>
+            </CardBody>
+          </Card>
           
-          <Box>
-            <Text fontSize="sm" color="gray.500" mb={2}>Tournament:</Text>
-            <Text fontWeight="bold">{tournament.description}</Text>
-            <Text fontSize="xs" fontFamily="monospace" mt={1}>{tournament.address}</Text>
-          </Box>
-          
-          <Box borderTop="1px" borderColor="gray.200" pt={4} />
-          
-          <Box>
-            <Text mb={2}>Entry Fee (ETH)</Text>
-            <HStack>
-              <Input 
-                type="number"
-                min="0.0001"
-                step="0.001"
-                value={entryFee}
-                onChange={(e) => setEntryFee(e.target.value)}
-                required
-              />
-              <Text fontWeight="bold" ml={2}>ETH</Text>
-            </HStack>
-            <Text fontSize="sm" color="gray.500" mt={1}>
-              Amount each participant must pay to join the betting group
-            </Text>
-          </Box>
-          
-          <Box>
-            <Text mb={2}>General Closing Window (minutes)</Text>
-            <Input 
-              type="number"
-              min={1}
-              max={1440} // 24 hours in minutes
-              value={generalClosingWindowMinutes}
-              onChange={(e) => setGeneralClosingWindowMinutes(parseInt(e.target.value) || 60)}
-              required
-            />
-            <Text fontSize="sm" color="gray.500">
-              Time before tournament end when all bets are automatically closed (1-1440 minutes)
-            </Text>
-          </Box>
-          
-          <Box>
-            <HStack justify="space-between" mb={2}>
-              <Heading size="sm">Prize Distribution (%)</Heading>
-              <Button 
-                size="sm" 
-                onClick={addPrizePlace}
-                colorScheme="teal"
-                variant="outline"
-              >
-                <Icon as={FiPlus} mr={2} />
-                Add Place
-              </Button>
-            </HStack>
-            
-            <Text 
-              fontSize="sm" 
-              color={getTotalPrizeDist() === 99.5 ? "green.500" : "red.500"} 
-              mb={2}
-              fontWeight="bold"
-            >
-              Total: {getTotalPrizeDist()}% {getTotalPrizeDist() !== 99.5 && '(must equal 99.5%)'}
-            </Text>
-            
-            <VStack gap={3} align="stretch">
-              {prizeDistValues.map((value, index) => (
-                <HStack key={index}>
-                  <Box flex="1">
-                    <Text fontSize="sm">{index + 1}{getOrdinal(index + 1)} Place</Text>
-                    <Input
+          {/* Entry Settings */}
+          <Card variant="default">
+            <CardHeader>
+              <Heading size="lg" color="gray.800">Entry Settings</Heading>
+            </CardHeader>
+            <CardBody>
+              <VStack gap={6} align="stretch">
+                <Field.Root>
+                  <Field.Label fontWeight="medium" color="gray.700">Entry Fee (ETH)</Field.Label>
+                  <HStack gap={3}>
+                    <Input 
                       type="number"
-                      min={0}
-                      max={100}
-                      step={0.1}
-                      value={value}
-                      onChange={(e) => handlePrizeDistChange(index, parseFloat(e.target.value) || 0)}
+                      min="0.0001"
+                      step="0.001"
+                      value={entryFee}
+                      onChange={(e) => setEntryFee(e.target.value)}
+                      size="lg"
+                      flex="1"
+                      required
                     />
-                  </Box>
-                  {prizeDistValues.length > 1 && (
-                    <Button 
-                      colorScheme="red" 
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removePrizePlace(index)}
-                      aria-label={`Remove ${index + 1}${getOrdinal(index + 1)} place`}
-                    >
-                      <Icon as={FiTrash2} />
-                    </Button>
+                    <Text fontWeight="semibold" color="gray.700" fontSize="lg">ETH</Text>
+                  </HStack>
+                  <Text fontSize="sm" color="gray.500" mt={1}>
+                    Amount each participant must pay to join the betting group
+                  </Text>
+                </Field.Root>
+                
+                <Field.Root>
+                  <Field.Label fontWeight="medium" color="gray.700">General Closing Window (minutes)</Field.Label>
+                  <Input 
+                    type="number"
+                    min={1}
+                    max={1440} // 24 hours in minutes
+                    value={generalClosingWindowMinutes}
+                    onChange={(e) => setGeneralClosingWindowMinutes(parseInt(e.target.value) || 60)}
+                    size="lg"
+                    required
+                  />
+                  <Text fontSize="sm" color="gray.500" mt={1}>
+                    Time before tournament end when all bets are automatically closed (1-1440 minutes)
+                  </Text>
+                </Field.Root>
+              </VStack>
+            </CardBody>
+          </Card>
+          
+          {/* Prize Distribution */}
+          <Card variant="default">
+            <CardHeader>
+              <HStack justify="space-between" align="center">
+                <Heading size="lg" color="gray.800">Prize Distribution</Heading>
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  onClick={addPrizePlace}
+                >
+                  <Icon as={FiPlus} mr={2} />
+                  Add Place
+                </Button>
+              </HStack>
+            </CardHeader>
+            <CardBody>
+              <VStack gap={6} align="stretch">
+                <Box
+                  bg={getTotalPrizeDist() === 99.5 ? "success.50" : "error.50"}
+                  p={4}
+                  borderRadius="lg"
+                  border="1px solid"
+                  borderColor={getTotalPrizeDist() === 99.5 ? "success.200" : "error.200"}
+                >
+                  <Text 
+                    fontSize="lg" 
+                    color={getTotalPrizeDist() === 99.5 ? "success.700" : "error.700"} 
+                    fontWeight="bold"
+                    textAlign="center"
+                  >
+                    Total: {getTotalPrizeDist()}%
+                  </Text>
+                  {getTotalPrizeDist() !== 99.5 && (
+                    <Text fontSize="sm" color="error.600" textAlign="center" mt={1}>
+                      Must equal 99.5%
+                    </Text>
                   )}
-                </HStack>
-              ))}
-            </VStack>
-            
-            <Text fontSize="xs" color="gray.500" mt={2}>
-              Note: 0.5% is reserved as platform fee
-            </Text>
-          </Box>
+                </Box>
+                
+                <VStack gap={4} align="stretch">
+                  {prizeDistValues.map((value, index) => (
+                    <Card key={index} variant="outline">
+                      <CardBody p={4}>
+                        <HStack gap={4} align="end">
+                          <Field.Root flex="1">
+                            <Field.Label fontWeight="medium" color="gray.700">
+                              {index + 1}{getOrdinal(index + 1)} Place (%)
+                            </Field.Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.1}
+                              value={value}
+                              onChange={(e) => handlePrizeDistChange(index, parseFloat(e.target.value) || 0)}
+                              size="md"
+                            />
+                          </Field.Root>
+                          {prizeDistValues.length > 1 && (
+                            <ChakraButton 
+                              colorScheme="red" 
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removePrizePlace(index)}
+                              aria-label={`Remove ${index + 1}${getOrdinal(index + 1)} place`}
+                            >
+                              <Icon as={FiTrash2} />
+                            </ChakraButton>
+                          )}
+                        </HStack>
+                      </CardBody>
+                    </Card>
+                  ))}
+                </VStack>
+                
+                <Text fontSize="sm" color="gray.500" textAlign="center">
+                  Note: 0.5% is reserved as platform fee
+                </Text>
+              </VStack>
+            </CardBody>
+          </Card>
           
-          <Button
-            colorScheme="teal"
-            type="submit"
-            size="lg"
-            mt={4}
-            disabled={!provider || getTotalPrizeDist() !== 99.5 || isSubmitting}
-          >
-            {isSubmitting ? "Creating..." : "Create Betting Group"}
-          </Button>
-          
-          {!provider && (
-            <Text color="red.500" fontSize="sm">
-              Connect your wallet to create a betting group
-            </Text>
-          )}
+          {/* Submit Section */}
+          <Card variant="outline">
+            <CardBody p={6}>
+              <VStack gap={4} align="stretch">
+                <Button
+                  variant="solid"
+                  type="submit"
+                  size="lg"
+                  loading={isSubmitting}
+                  loadingText="Creating Group..."
+                  disabled={!provider || getTotalPrizeDist() !== 99.5}
+                  w="100%"
+                >
+                  Create Betting Group
+                </Button>
+                
+                {!provider && (
+                  <Text color="error.500" fontSize="sm" textAlign="center">
+                    Connect your wallet to create a betting group
+                  </Text>
+                )}
+                
+                {getTotalPrizeDist() !== 99.5 && (
+                  <Text color="warning.500" fontSize="sm" textAlign="center">
+                    Prize distribution must total 99.5% to continue
+                  </Text>
+                )}
+              </VStack>
+            </CardBody>
+          </Card>
         </VStack>
       </form>
     </Box>

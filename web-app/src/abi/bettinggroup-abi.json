@@ -36,6 +36,36 @@
     "type": "constructor"
   },
   {
+    "inputs": [],
+    "name": "AlreadyRegistered",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BettingGroupNotActive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BettingWindowClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DecryptionNotReady",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DecryptionNotRequested",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "IncorrectEntryFee",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint8",
@@ -52,6 +82,41 @@
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "MinimumParticipantsMet",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NameAlreadyTaken",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotEnoughParticipants",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OnlyPlatformAdmin",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OnlyRegisteredParticipants",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ParticipantNotRegistered",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ResultsAlreadyProcessed",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "int32",
@@ -60,6 +125,31 @@
       }
     ],
     "name": "SecurityZoneOutOfBounds",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentEnded",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentNotEnded",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentNotStarted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentStarted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
     "type": "error"
   },
   {
@@ -428,7 +518,13 @@
     "type": "function"
   },
   {
-    "inputs": [],
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_participant",
+        "type": "address"
+      }
+    ],
     "name": "getParticipantBets",
     "outputs": [
       {

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Input, 
-  Button, 
   VStack, 
   Heading, 
   Field,
@@ -24,6 +23,9 @@ import type { Tournament, Group } from '../types';
 import TournamentCard from './TournamentCard';
 import { Link as RouterLink } from 'react-router-dom';
 import { ethers } from 'ethers';
+import { Button } from './ui/button';
+import { Card, CardBody, CardHeader } from './ui/card';
+import { CopyAddress } from './ui/copy-address';
 
 // Tournament status types
 type TournamentStatus = 'active' | 'upcoming' | 'ended' | null;
@@ -190,14 +192,12 @@ const TournamentSearch = () => {
   const renderCreateButton = () => {
     return (
       <Button 
-        colorScheme="teal"
+        variant="solid"
         size="md"
         onClick={openDrawer}
         disabled={!provider}
         opacity={!provider ? 0.7 : 1}
         cursor={!provider ? "not-allowed" : "pointer"}
-        borderWidth="1px"
-        borderColor="gray.500"
         title={!provider ? "Please connect your wallet first" : ""}
       >
         <Icon as={FiPlus} mr={2} />
@@ -210,28 +210,34 @@ const TournamentSearch = () => {
   const renderUserGroups = () => {
     if (!userAddress) {
       return (
-        <Box p={4} mb={6} borderWidth="1px" borderRadius="lg" borderColor="gray.300">
-          <Text color="gray.600">Connect your wallet to see your registered betting groups</Text>
-        </Box>
+        <Card variant="outline" mb={6}>
+          <CardBody p={6}>
+            <Text color="gray.600">Connect your wallet to see your registered betting groups</Text>
+          </CardBody>
+        </Card>
       );
     }
 
     if (loadingGroups) {
       return (
-        <Box p={4} mb={6} borderWidth="1px" borderRadius="lg" borderColor="gray.300">
-          <Flex align="center" justify="center" py={2}>
-            <Spinner size="sm" color="teal.500" mr={2} />
-            <Text color="gray.600">Loading your registered groups...</Text>
-          </Flex>
-        </Box>
+        <Card variant="outline" mb={6}>
+          <CardBody p={6}>
+            <Flex align="center" justify="center" py={2}>
+              <Spinner size="sm" color="brand.500" mr={2} />
+              <Text color="gray.600">Loading your registered groups...</Text>
+            </Flex>
+          </CardBody>
+        </Card>
       );
     }
 
     if (userGroups.length === 0) {
       return (
-        <Box p={4} mb={6} borderWidth="1px" borderRadius="lg" borderColor="gray.300">
-          <Text color="gray.600">You are not registered to any betting groups yet</Text>
-        </Box>
+        <Card variant="outline" mb={6}>
+          <CardBody p={6}>
+            <Text color="gray.600">You are not registered to any betting groups yet</Text>
+          </CardBody>
+        </Card>
       );
     }
 
@@ -250,30 +256,26 @@ const TournamentSearch = () => {
           {userGroups.map(group => (
             <GridItem key={group.address}>
               <RouterLink to={`/tournaments/${group.tournamentAddress}/groups/${group.address}`}>
-                <Box 
-                  p={4} 
-                  boxShadow="md" 
-                  borderRadius="md" 
-                  borderWidth="1px" 
-                  borderColor="gray.300"
-                  _hover={{ 
-                    transform: 'translateY(-2px)', 
-                    boxShadow: 'lg',
-                    borderColor: 'teal.300'
-                  }}
-                  transition="all 0.2s"
-                  height="100%"
+                <Card 
+                  variant="betting"
+                  cursor="pointer"
+                  h="full"
                   display="block"
                 >
-                  <VStack align="stretch" gap={2}>
-                    <Heading size="sm" truncate>
-                      {group.description}
-                    </Heading>
-                    <Text fontSize="xs" color="gray.500" truncate>
-                      {group.address}
-                    </Text>
-                  </VStack>
-                </Box>
+                  <CardBody p={4}>
+                    <VStack align="stretch" gap={2}>
+                      <Heading size="sm" lineClamp={1}>
+                        {group.description}
+                      </Heading>
+                      <CopyAddress 
+                        address={group.address}
+                        fontSize="xs"
+                        showFullAddress={false}
+                        variant="compact"
+                      />
+                    </VStack>
+                  </CardBody>
+                </Card>
               </RouterLink>
             </GridItem>
           ))}
@@ -361,7 +363,7 @@ const TournamentSearch = () => {
 
       {loading ? (
         <VStack py={10}>
-          <Spinner size="xl" color="teal.500" />
+          <Spinner size="xl" color="brand.500" />
           <Text color="gray.600">Loading tournaments...</Text>
         </VStack>
       ) : (
@@ -377,7 +379,7 @@ const TournamentSearch = () => {
               base: "1fr",
               md: "repeat(2, 1fr)",
               lg: "repeat(3, 1fr)",
-              xl: "repeat(4, 1fr)"
+              xl: "repeat(3, 1fr)"
             }} 
             gap={4}
           >

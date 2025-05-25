@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import "./Tournament.sol";
 import { InEuint16, InEuint32, InEuint256 } from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
+import "hardhat/console.sol";
 
 /**
  * @title BettingGroup
@@ -219,7 +220,12 @@ contract BettingGroup {
      * @notice Allows a participant to register for the betting group by paying the entry fee
      * @param _name Name of the participant
      */
-    function register(string memory _name) external payable onlyBeforeTournamentEnd bettingGroupActive {
+    function register(string memory _name) 
+        external 
+        payable 
+        bettingGroupActive 
+        onlyBeforeTournamentEnd 
+    {
         if (participants[msg.sender].hasRegistered) revert AlreadyRegistered();
         if (msg.value != entryFee) revert IncorrectEntryFee();
         
@@ -253,6 +259,7 @@ contract BettingGroup {
         
         participantCount++;
         totalPrizePool += msg.value;
+        
         emit ParticipantRegistered(msg.sender, _name);
     }
 
@@ -352,11 +359,12 @@ contract BettingGroup {
     }
 
     /**
-     * @notice Gets all betting information for the caller
-     * @return betIds Array of bet IDs that the caller has placed
+     * @notice Gets all betting information for a specific participant
+     * @param _participant Address of the participant to get bets for
+     * @return betIds Array of bet IDs that the participant has placed
      * @return betsInfo Array of bet information for placed bets
      */
-    function getParticipantBets()
+    function getParticipantBets(address _participant)
         external
         view
         returns (
@@ -364,19 +372,29 @@ contract BettingGroup {
             Bet[] memory betsInfo
         )
     {
-        if (!participants[msg.sender].hasRegistered) revert ParticipantNotRegistered();
+        console.log("=== GET PARTICIPANT BETS ===");
+        console.log("Caller address:", msg.sender);
+        console.log("Participant address:", _participant);
+        console.log("Is registered:", participants[_participant].hasRegistered);
+        
+        if (!participants[_participant].hasRegistered) revert ParticipantNotRegistered();
         
         // Get the number of betting opportunities from the tournament
         Tournament tournament = Tournament(tournamentContract);
         uint16 opportunityCount = tournament.getBettingOpportunitiesCount();
         
+        console.log("Total betting opportunities:", opportunityCount);
+        
         // First, count how many bets this participant has placed
         uint16 placedCount = 0;
         for (uint16 i = 0; i < opportunityCount; i++) {
-            if (participants[msg.sender].bets[i].placed) {
+            if (participants[_participant].bets[i].placed) {
                 placedCount++;
+                console.log("Found bet for opportunity:", i);
             }
         }
+        
+        console.log("Total bets placed by participant:", placedCount);
         
         // Initialize arrays with the size of placed bets only
         betIds = new uint16[](placedCount);
@@ -385,9 +403,9 @@ contract BettingGroup {
         // Fill arrays only with placed bets
         uint16 index = 0;
         for (uint16 i = 0; i < opportunityCount; i++) {
-            if (participants[msg.sender].bets[i].placed) {
+            if (participants[_participant].bets[i].placed) {
                 betIds[index] = i;
-                betsInfo[index] = participants[msg.sender].bets[i];
+                betsInfo[index] = participants[_participant].bets[i];
                 index++;
             }
         }

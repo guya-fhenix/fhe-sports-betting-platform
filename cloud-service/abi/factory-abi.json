@@ -5,6 +5,76 @@
     "type": "constructor"
   },
   {
+    "inputs": [],
+    "name": "AmountMustBeGreaterThanZero",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DuplicateBettingOpportunityId",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EmptyDescription",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InsufficientBalance",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidClosingWindow",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidPrizeDistributionLength",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidPrizeDistributionTotal",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidTimeRange",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoBettingOpportunities",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NoOptionsProvided",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OnlyPlatformAdmin",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentAlreadyStarted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "TournamentNotFromFactory",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
+    "type": "error"
+  },
+  {
     "anonymous": false,
     "inputs": [
       {
@@ -282,45 +352,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "getAllBettingGroups",
-    "outputs": [
-      {
-        "internalType": "address[]",
-        "name": "",
-        "type": "address[]"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getAllTournaments",
-    "outputs": [
-      {
-        "internalType": "address[]",
-        "name": "",
-        "type": "address[]"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getPlatformAdmin",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
@@ -392,14 +423,7 @@
         "type": "uint256"
       }
     ],
-    "name": "withdrawPartialFees",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "withdrawPlatformFees",
+    "name": "withdrawFees",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

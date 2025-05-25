@@ -6,12 +6,12 @@ import {
   Drawer,
   Flex,
   Heading,
-  Spacer,
-  Button,
-  Icon
+  Icon,
+  HStack,
+  VStack
 } from '@chakra-ui/react';
 import { ethers } from 'ethers';
-import { FiX, FiActivity, FiList } from 'react-icons/fi';
+import { FiX, FiActivity } from 'react-icons/fi';
 
 // Components
 import WalletConnect from './components/WalletConnect';
@@ -21,6 +21,7 @@ import CreateTournament from './components/CreateTournament';
 import EventLog from './components/EventLog';
 import { Toaster } from './components/ui/toaster';
 import BettingGroupScreen from './components/BettingGroupScreen';
+import { Button } from './components/ui/button';
 
 interface OpenChangeEvent {
   open: boolean;
@@ -84,64 +85,110 @@ function App() {
 
   return (
     <Router>
-      <Container minH="100vh" bg="gray.50" minW="100vw" padding={0}>
-        {/* Header */}
-        <Box bg="teal.500" py={4} px={8} color="white">
-          <Flex align="center">
-            <Link to="/">
-              <Heading size="2xl" cursor="pointer" _hover={{ opacity: 0.9 }}>Sports Bets</Heading>
-            </Link>
-            <Spacer />
-            <WalletConnect onConnect={handleConnect} />
-          </Flex>
+      <Box minH="100vh" bg="gray.50" w="100vw" display="flex" flexDirection="column">
+        {/* Header - Fixed at top */}
+        <Box 
+          bg="white" 
+          borderBottom="1px solid" 
+          borderColor="gray.200" 
+          boxShadow="sm"
+          w="100%"
+          flexShrink={0}
+          zIndex={10}
+        >
+          <Container maxW="100%" py={4} px={8}>
+            <Flex align="center" justify="space-between" w="100%">
+              <Link to="/">
+                <HStack gap={3} cursor="pointer" _hover={{ opacity: 0.8 }}>
+                  <Box
+                    w={10}
+                    h={10}
+                    bg="brand.500"
+                    borderRadius="lg"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                  >
+                    <Icon color="white" fontSize="xl">
+                      <FiActivity />
+                    </Icon>
+                  </Box>
+                  <VStack align="start" gap={0}>
+                    <Heading size="lg" color="gray.800" lineHeight="1">
+                      Sports Bets
+                    </Heading>
+                    <Box fontSize="xs" color="gray.500" fontWeight="medium">
+                      Blockchain Betting Platform
+                    </Box>
+                  </VStack>
+                </HStack>
+              </Link>
+              
+              <WalletConnect onConnect={handleConnect} />
+            </Flex>
+          </Container>
         </Box>
 
-        {/* Main Content Layout with EventLog */}
-        <Flex>
-          {/* Main Content Area */}
+        {/* Main Layout - Content + EventLog */}
+        <Flex flex="1" overflow="hidden" w="100%">
+          {/* Main Content Area - Uses full page scroll */}
           <Box 
-            py={8} 
-            px={8} 
             flex="1" 
-            transition="width 0.3s ease"
+            p={8}
+            overflowY="auto"
             overflowX="hidden"
+            bg="gray.50"
+            h="calc(100vh - 80px)"
           >
             <Routes>
               <Route path="/" element={<TournamentSearch />} />
               <Route path="/tournaments/:address" element={<TournamentScreen />} />
               <Route path="/tournaments/:tournamentAddress/groups/:groupAddress" element={<BettingGroupScreen />} />
-              {/* Add more routes as needed */}
             </Routes>
           </Box>
           
-          {/* Event Log - Always visible */}
-          <EventLog 
-            isOpen={true} 
-            onClose={() => {}} 
-          />
+          {/* Event Log - Natural flow with own scroll */}
+          <Box
+            w={{ base: "300px", lg: "400px" }}
+            minW={{ base: "300px", lg: "400px" }}
+            maxW={{ base: "300px", lg: "400px" }}
+            borderLeft="1px solid"
+            borderColor="gray.200"
+            bg="white"
+            h="calc(100vh - 80px)"
+            flexShrink={0}
+          >
+            <EventLog 
+              isOpen={true} 
+              onClose={() => {}} 
+            />
+          </Box>
         </Flex>
 
         {/* Create Tournament Drawer */}
         <Drawer.Root {...drawerProps}>
           <Drawer.Backdrop />
           <Drawer.Positioner>
-            <Drawer.Content width="50vw" maxWidth="50vw">
-              <Drawer.Header>
-                <Drawer.Title>Create Tournament</Drawer.Title>
+            <Drawer.Content width="50vw" maxWidth="50vw" bg="white">
+              <Drawer.Header borderBottom="1px solid" borderColor="gray.200" p={6}>
+                <Drawer.Title fontSize="xl" fontWeight="bold" color="gray.800">
+                  Create Tournament
+                </Drawer.Title>
                 <Button 
                   size="sm" 
                   variant="ghost" 
                   onClick={closeDrawer} 
                   position="absolute" 
-                  right="8px" 
-                  top="8px"
+                  right={4} 
+                  top={4}
+                  p={2}
                 >
                   <Icon>
                     <FiX />
                   </Icon>
                 </Button>
               </Drawer.Header>
-              <Drawer.Body>
+              <Drawer.Body p={6}>
                 <CreateTournament 
                   provider={provider} 
                   onSuccess={handleTournamentCreated} 
@@ -153,7 +200,7 @@ function App() {
         
         {/* Toast notifications */}
         <Toaster />
-      </Container>
+      </Box>
     </Router>
   );
 }

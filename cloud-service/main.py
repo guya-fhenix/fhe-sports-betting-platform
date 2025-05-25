@@ -16,7 +16,7 @@ from models import (
     SearchQuery, AddressQuery
 )
 from db import (
-    get_tournament, get_group, 
+    save_tournament, save_group, get_tournament, get_group,
     search_tournaments_by_description, search_groups_by_description,
     get_tournament_groups, get_all_tournaments, get_all_groups,
     get_user_groups
@@ -368,12 +368,9 @@ async def get_groups_by_tournament(address: str):
     logger.info(f"Found {len(groups)} betting groups for tournament {address}")
     return groups
 
-@app.get("/api/user/{address}/groups")
-async def get_user_groups(address: str):
+@app.get("/user/{address}/groups")
+async def get_user_groups_api(address: str):
     """Get betting groups a user is registered for"""
-    # Normalize the address to lowercase for consistent comparison
-    address = address.lower()
-    
     # Get the user's groups directly from Redis
     user_group_addresses = get_user_groups(address)
     
@@ -444,7 +441,7 @@ async def verify_user_in_group(user_address: str, group_address: str):
         
         # Check Redis status
         redis_status = get_user_groups(user_address)
-        in_redis = group_address.lower() in [g.lower() for g in redis_status]
+        in_redis = group_address in redis_status
         
         # If statuses don't match, fix Redis
         if blockchain_status and not in_redis:

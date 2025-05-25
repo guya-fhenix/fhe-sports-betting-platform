@@ -25,6 +25,14 @@ const config: HardhatUserConfig = {
 	// defaultNetwork: 'localcofhe',
 	networks: {
 		// The plugin already provides localcofhe configuration
+		'localcofhe': {
+			url: process.env.LOCALCOFHE_RPC_URL || 'http://localhost:42069',
+			accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+			chainId: 420105,
+			gasMultiplier: 1.2,
+			timeout: 60000,
+			httpHeaders: {}
+		},
 
 		hardhat: { hardfork: "cancun" },
 

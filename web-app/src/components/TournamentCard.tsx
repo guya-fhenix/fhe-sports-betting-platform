@@ -1,13 +1,15 @@
 import {
-  Box,
   Heading,
   Text,
-  Badge,
   VStack,
-  HStack
+  HStack,
+  Box
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import type { Tournament } from '../types';
+import { Card, CardBody } from './ui/card';
+import { Badge } from './ui/badge';
+import { CopyAddress } from './ui/copy-address';
 
 interface TournamentCardProps {
   tournament: Tournament;
@@ -60,11 +62,11 @@ const TournamentCard = ({ tournament }: TournamentCardProps) => {
   // Get status badge
   const getStatusBadge = () => {
     if (isActive()) {
-      return <Badge colorScheme="green">Active</Badge>;
+      return <Badge variant="active">Active</Badge>;
     } else if (isUpcoming()) {
-      return <Badge colorScheme="blue">Upcoming</Badge>;
+      return <Badge variant="upcoming">Upcoming</Badge>;
     } else {
-      return <Badge colorScheme="red">Ended</Badge>;
+      return <Badge variant="ended">Ended</Badge>;
     }
   };
   
@@ -73,47 +75,58 @@ const TournamentCard = ({ tournament }: TournamentCardProps) => {
   };
   
   return (
-    <Box
-      color="gray.800"
-      borderWidth="1px"
-      borderRadius="lg"
-      borderColor="gray.200"
-      overflow="hidden"
-      p={3}
-      boxShadow="sm"
-      height="100%"
-      display="flex"
-      flexDirection="column"
+    <Card
+      variant="betting"
       cursor="pointer"
       onClick={handleCardClick}
-      _hover={{
-        boxShadow: "md",
-        borderColor: "teal.300",
-        transform: "translateY(-2px)"
-      }}
-      transition="all 0.2s"
+      h="full"
+      display="flex"
+      flexDirection="column"
     >
-      <VStack align="start" gap={1} flex="1">
-        <HStack width="100%" justify="space-between">
-          <Heading size="sm" maxW="80%" title={tournament.description} truncate>
-            {tournament.description}
-          </Heading>
-          {getStatusBadge()}
-        </HStack>
-        
-        <Text fontSize="xs" maxW="100%" truncate>
-          {tournament.address}
-        </Text>
-        
-        <Text fontSize="sm">
-          <Text as="span" fontWeight="bold">Start:</Text> {formatDate(tournament.startTime)}
-        </Text>
-        
-        <Text fontSize="sm">
-          <Text as="span" fontWeight="bold">End:</Text> {formatDate(tournament.endTime)}
-        </Text>
-      </VStack>
-    </Box>
+      <CardBody p={6}>
+        <VStack align="stretch" gap={4} h="full">
+          <HStack justify="space-between" align="start">
+            <Heading 
+              size="md" 
+              color="gray.800"
+              lineClamp={2}
+              flex="1"
+              mr={3}
+            >
+              {tournament.description}
+            </Heading>
+            {getStatusBadge()}
+          </HStack>
+          
+          <CopyAddress 
+            address={tournament.address}
+            label="Contract Address"
+            fontSize="sm"
+            variant="default"
+          />
+          
+          <VStack align="stretch" gap={2} mt="auto">
+            <HStack justify="space-between">
+              <Text fontSize="sm" color="gray.500" fontWeight="medium">
+                Start Time
+              </Text>
+              <Text fontSize="sm" color="gray.800" fontWeight="semibold">
+                {formatDate(tournament.startTime)}
+              </Text>
+            </HStack>
+            
+            <HStack justify="space-between">
+              <Text fontSize="sm" color="gray.500" fontWeight="medium">
+                End Time
+              </Text>
+              <Text fontSize="sm" color="gray.800" fontWeight="semibold">
+                {formatDate(tournament.endTime)}
+              </Text>
+            </HStack>
+          </VStack>
+        </VStack>
+      </CardBody>
+    </Card>
   );
 };
 
