@@ -103,27 +103,28 @@ const BettingGroupScreen = () => {
       console.log("signer", signer);
       console.log("providerRef.current", providerRef.current);
 
-      // Initialize cofhejs with ethers
+      // Initialize with LOCAL environment
+      console.log("Initializing with LOCAL environment...");
       const result = await cofhejs.initializeWithEthers({
         ethersProvider: providerRef.current,
         ethersSigner: signer,
-        environment: "MOCK"
+        environment: "LOCAL"
       });
 
-      console.log("init results", result);
+      console.log("LOCAL init results", result);
       if (!result.success) {
-        console.error("Failed to initialize cofhejs", result.error.message);
+        throw new Error(`Failed to initialize cofhejs with LOCAL: ${result.error?.message}`);
       }
-
+      
       console.log("cofhejs.store.getState()", cofhejs.store.getState());
       
       setIsCofhejsInitialized(true);
-      console.log("Cofhejs initialized successfully");
+      console.log("Cofhejs initialized successfully with LOCAL environment");
     } catch (error) {
       console.error("Error initializing Cofhejs:", error);
       toaster.error({
         title: 'Encryption Setup Failed',
-        description: 'Failed to initialize encryption. Some features may not work.'
+        description: `Failed to initialize encryption: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
   }, [providerRef, isCofhejsInitialized]);

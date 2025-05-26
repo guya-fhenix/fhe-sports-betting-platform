@@ -5,39 +5,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="43fee14b-02d0-49ff-8a6b-e151d33d9786" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/dataSources/6fdccb62-8da8-4997-8ea1-8048e32a53c1.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources/6fdccb62-8da8-4997-8ea1-8048e32a53c1.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/cloud-service/.env" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloud-service/abi/bettinggroup-abi.json" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/abi/bettinggroup-abi.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/cloud-service/abi/deployed-addresses.json" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/abi/deployed-addresses.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloud-service/abi/factory-abi.json" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/abi/factory-abi.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloud-service/abi/tournament-abi.json" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/abi/tournament-abi.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloud-service/blockchain.py" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/blockchain.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloud-service/db.py" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/db.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cloud-service/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/on-chain/contracts/BettingGroup.sol" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/contracts/BettingGroup.sol" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/on-chain/hardhat.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/hardhat.config.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/on-chain/scripts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/scripts/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/on-chain/scripts/export-all.sh" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/scripts/export-all.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/on-chain/scripts/export-deployed-addresses.ts" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/scripts/export-deployed-addresses.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/deployments/localcofhe.json" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/deployments/localcofhe.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/.env" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/.env" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/public/vite.svg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/App.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/abi/bettinggroup-abi.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/abi/bettinggroup-abi.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/pnpm-lock.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/pnpm-lock.yaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/src/abi/deployed-addresses.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/abi/deployed-addresses.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/abi/factory-abi.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/abi/factory-abi.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/abi/tournament-abi.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/abi/tournament-abi.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/src/components/BettingGroupScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/BettingGroupScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/CreateGroup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/CreateGroup.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/CreateTournament.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/CreateTournament.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/EventLog.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/EventLog.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/TournamentCard.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/TournamentCard.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/TournamentScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/TournamentScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/TournamentSearch.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/TournamentSearch.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/WalletConnect.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/WalletConnect.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/components/ui/provider.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/ui/provider.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/src/main.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/main.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web-app/vite.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/vite.config.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
