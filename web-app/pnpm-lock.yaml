@@ -27,8 +27,8 @@ importers:
         specifier: ^1.6.7
         version: 1.9.0
       cofhejs:
-        specifier: ^0.2.1-alpha.1
-        version: 0.2.1-alpha.1(@types/react@19.1.4)(react@19.1.0)(use-sync-external-store@1.4.0(react@19.1.0))
+        specifier: ^0.2.0
+        version: 0.2.0(@types/react@19.1.4)(react@19.1.0)(use-sync-external-store@1.4.0(react@19.1.0))
       ethers:
         specifier: ^6.11.1
         version: 6.14.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)
@@ -1602,8 +1602,8 @@ packages:
     resolution: {integrity: sha512-EcR6r5a8bj6pu3ycsa/E/cKVGuTgZJZdsyUYHOksG/UHIiKfjxzRxYJpyVBwYaQeOvghal9fcc4PidlgzugAQg==}
     engines: {node: '>=6'}
 
-  cofhejs@0.2.1-alpha.1:
-    resolution: {integrity: sha512-PiS/eC6aQoh1Ecwis22CdJxs0OsszlKZBCBXjsrU7GIHxiqVs9xh9Ym8wKlVx3qi5zGWbr9y/59YKEAf21CHwA==}
+  cofhejs@0.2.0:
+    resolution: {integrity: sha512-KXmhtr5ITh4o7CLMGk+mhPHoYzoiSainx3r7idts/mm3TEVhtN3gkaEVSN6YcoDGjAUMTfgdPJpJYrXbfvpNrg==}
     engines: {node: '>=20.0.0'}
 
   color-convert@2.0.1:
@@ -5741,7 +5741,7 @@ snapshots:
 
   clsx@1.2.1: {}
 
-  cofhejs@0.2.1-alpha.1(@types/react@19.1.4)(react@19.1.0)(use-sync-external-store@1.4.0(react@19.1.0)):
+  cofhejs@0.2.0(@types/react@19.1.4)(react@19.1.0)(use-sync-external-store@1.4.0(react@19.1.0)):
     dependencies:
       '@types/node': 20.17.50
       idb-keyval: 6.2.2

@@ -310,7 +310,7 @@ contract BettingGroup {
         external 
         onlyRegisteredParticipant 
         bettingGroupActive
-    {
+    {        
         Tournament tournament = Tournament(tournamentContract);
         if (!tournament.isBettingWindowOpen(_betId, generalClosingWindowInSeconds)) revert BettingWindowClosed();
 
@@ -371,41 +371,39 @@ contract BettingGroup {
             uint16[] memory betIds,
             Bet[] memory betsInfo
         )
-    {
-        console.log("=== GET PARTICIPANT BETS ===");
-        console.log("Caller address:", msg.sender);
-        console.log("Participant address:", _participant);
-        console.log("Is registered:", participants[_participant].hasRegistered);
-        
+    {        
         if (!participants[_participant].hasRegistered) revert ParticipantNotRegistered();
         
-        // Get the number of betting opportunities from the tournament
+        // Get the betting opportunities from the tournament
         Tournament tournament = Tournament(tournamentContract);
-        uint16 opportunityCount = tournament.getBettingOpportunitiesCount();
+        Tournament.BettingOpportunity[] memory opportunities = tournament.getBettingOpportunities();
         
-        console.log("Total betting opportunities:", opportunityCount);
+        console.log("Total betting opportunities:", opportunities.length);
         
         // First, count how many bets this participant has placed
         uint16 placedCount = 0;
-        for (uint16 i = 0; i < opportunityCount; i++) {
-            if (participants[_participant].bets[i].placed) {
+        for (uint i = 0; i < opportunities.length; i++) {
+            uint16 betId = opportunities[i].id;
+            bool betPlaced = participants[_participant].bets[betId].placed;
+            console.log("Opportunity ID", betId, "bet placed:", betPlaced);
+            if (betPlaced) {
                 placedCount++;
-                console.log("Found bet for opportunity:", i);
+                console.log("Found bet for opportunity ID:", betId);
             }
         }
-        
-        console.log("Total bets placed by participant:", placedCount);
-        
+                
         // Initialize arrays with the size of placed bets only
         betIds = new uint16[](placedCount);
         betsInfo = new Bet[](placedCount);
         
         // Fill arrays only with placed bets
         uint16 index = 0;
-        for (uint16 i = 0; i < opportunityCount; i++) {
-            if (participants[_participant].bets[i].placed) {
-                betIds[index] = i;
-                betsInfo[index] = participants[_participant].bets[i];
+        for (uint i = 0; i < opportunities.length; i++) {
+            uint16 betId = opportunities[i].id;
+            if (participants[_participant].bets[betId].placed) {
+                console.log("Adding bet", betId, "to results at index", index);
+                betIds[index] = betId;
+                betsInfo[index] = participants[_participant].bets[betId];
                 index++;
             }
         }

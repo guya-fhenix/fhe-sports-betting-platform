@@ -5,15 +5,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="43fee14b-02d0-49ff-8a6b-e151d33d9786" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/cloud-service/.env" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/.env" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/cloud-service/abi/deployed-addresses.json" beforeDir="false" afterPath="$PROJECT_DIR$/cloud-service/abi/deployed-addresses.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/on-chain/deployments/localcofhe.json" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/deployments/localcofhe.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/on-chain/contracts/BettingGroup.sol" beforeDir="false" afterPath="$PROJECT_DIR$/on-chain/contracts/BettingGroup.sol" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/.env" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/.env" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/package.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/pnpm-lock.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/pnpm-lock.yaml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/src/abi/deployed-addresses.json" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/abi/deployed-addresses.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web-app/src/components/BettingGroupScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/src/components/BettingGroupScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/web-app/vite.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/web-app/vite.config.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

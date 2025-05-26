@@ -14,7 +14,7 @@ import {
   Dialog,
   Wrap,
   WrapItem,
-  Field
+  Field,
 } from '@chakra-ui/react';
 import { FiArrowLeft, FiCheck, FiUser, FiLogOut, FiAlertTriangle, FiX } from 'react-icons/fi';
 import { ethers } from 'ethers';
@@ -25,10 +25,11 @@ import { toaster } from './ui/toaster';
 import { Button } from './ui/button';
 import { Card, CardBody, CardHeader } from './ui/card';
 import { Badge } from './ui/badge';
+import { EncryptedTag } from './ui/encrypted-tag';
 import type { Group } from '../types';
 import { CopyAddress } from './ui/copy-address';
 // Static imports for cofhejs
-import { cofhejs, Encryptable } from 'cofhejs/web';
+import { cofhejs, Encryptable, EncryptStep } from 'cofhejs/web';
 
 // Define types for betting opportunities and user bets
 interface BettingOpportunity {
@@ -74,11 +75,12 @@ const BettingGroupScreen = () => {
   const [userBetIds, setUserBetIds] = useState<number[]>([]);
   const [isPlacingBet, setIsPlacingBet] = useState(false);
   const [placingBetId, setPlacingBetId] = useState<number | null>(null);
-  const [encryptionState, setEncryptionState] = useState<string>('');
+  const [encryptionStep, setEncryptionStep] = useState<EncryptStep | null>(null);
   const [isCofhejsInitialized, setIsCofhejsInitialized] = useState(false);
   
-  // Reference to provider
+  // Reference to provider and initialization status
   const providerRef = useRef<ethers.BrowserProvider | null>(null);
+  const initializingRef = useRef<boolean>(false);
   
   // Try to access parent component context if available
   const drawerContext = (window as any).__drawerContext;
@@ -93,7 +95,18 @@ const BettingGroupScreen = () => {
   
   // Initialize cofhejs
   const initializeCofhejs = useCallback(async () => {
-    if (!providerRef.current || isCofhejsInitialized) return;
+    // Prevent duplicate initialization
+    if (!providerRef.current || isCofhejsInitialized || initializingRef.current) {
+      console.log("Skipping cofhejs initialization:", {
+        hasProvider: !!providerRef.current,
+        isInitialized: isCofhejsInitialized,
+        isInitializing: initializingRef.current
+      });
+      return;
+    }
+    
+    // Set initializing flag
+    initializingRef.current = true;
     
     console.log("Initializing cofhejs");
 
@@ -126,8 +139,11 @@ const BettingGroupScreen = () => {
         title: 'Encryption Setup Failed',
         description: `Failed to initialize encryption: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
+    } finally {
+      // Reset initializing flag
+      initializingRef.current = false;
     }
-  }, [providerRef, isCofhejsInitialized]);
+  }, [isCofhejsInitialized]);
   
   // Fetch group basic data
   const fetchGroup = useCallback(async () => {
@@ -292,6 +308,7 @@ const BettingGroupScreen = () => {
 
       // Store the bet IDs that the user has placed
       const betIdNumbers = betIds.map((id: any) => Number(id));
+      console.log("betIdNumbers", betIdNumbers);
       setUserBetIds(betIdNumbers);
       
       // Fetch betting opportunity details from tournament contract
@@ -351,23 +368,26 @@ const BettingGroupScreen = () => {
     try {
       setIsPlacingBet(true);
       setPlacingBetId(betId);
-      
-      // Log encryption state for toasts
-      const logEncryptionState = (state: string) => {
-        setEncryptionState(state);
+
+      const logEncryptionStep = (state: EncryptStep) => {
+        setEncryptionStep(state);
         toaster.update(loadingToastId, {
           title: 'Encrypting Selection',
-          description: `Status: ${state}`,
+          description: `Step: ${state}`,
           type: 'loading'
         });
+        console.log(`Log Encrypt Step :: ${state}`);
       };
+    
       
       // Encrypt the option index using cofhejs
       console.log("Cofhejs instance:", cofhejs);
       console.log("Cofhejs state:", cofhejs.store.getState());
-      const encryptedOption = await cofhejs.encrypt(logEncryptionState, [Encryptable.uint16(BigInt(optionIndex))]);
+      console.log("Encrypting option index:", optionIndex);
+      const encryptedOption = await cofhejs.encrypt(logEncryptionStep, [Encryptable.uint16(BigInt(optionIndex))]);
       
       console.log("Encrypted option:", encryptedOption);
+      console.log("Encrypted option data:", encryptedOption.data);
       
       // Check if encryption was successful
       if (!encryptedOption.success) {
@@ -398,6 +418,7 @@ const BettingGroupScreen = () => {
         signer
       );
       
+      console.log("Placing bet with encrypted option:", encryptedOption.data[0]);
       // Call placeBet with the encrypted option
       const tx = await contract.placeBet(betId, encryptedOption.data[0]);
       
@@ -410,6 +431,7 @@ const BettingGroupScreen = () => {
       
       // Wait for transaction to be mined
       const receipt = await tx.wait();
+      console.log("Transaction receipt:", receipt);
       
       // Dismiss loading toast
       toaster.dismiss(loadingToastId);
@@ -437,7 +459,7 @@ const BettingGroupScreen = () => {
     } finally {
       setIsPlacingBet(false);
       setPlacingBetId(null);
-      setEncryptionState('');
+      setEncryptionStep(null);
 
       toaster.dismiss(loadingToastId);
     }
@@ -576,9 +598,13 @@ const BettingGroupScreen = () => {
       checkTournamentStarted();
       fetchParticipants();
       fetchBettingOpportunities();
-      initializeCofhejs();
+      
+      // Only initialize cofhejs if not already initialized or initializing
+      if (!isCofhejsInitialized && !initializingRef.current) {
+        initializeCofhejs();
+      }
     }
-  }, [checkGroupActive, checkUserRegistered, checkTournamentStarted, fetchParticipants, fetchBettingOpportunities, initializeCofhejs]);
+  }, [checkGroupActive, checkUserRegistered, checkTournamentStarted, fetchParticipants, fetchBettingOpportunities, initializeCofhejs, isCofhejsInitialized]);
   
   // Fetch user bets when registered status changes
   useEffect(() => {
@@ -644,13 +670,7 @@ const BettingGroupScreen = () => {
       return 'No value';
     }
     
-    // If the string starts with 'e', it's an encrypted value
-    if (value.startsWith('e')) {
-      return 'Encrypted value';
-    }
-    
-    // Otherwise it's a regular value
-    return value;
+    return <EncryptedTag />
   };
   
   if (loading) {
@@ -826,8 +846,10 @@ const BettingGroupScreen = () => {
               <VStack align="stretch" gap={4}>
                 {bettingOpportunities.map((opportunity) => {
                   const hasPlacedBet = hasBetBeenPlaced(opportunity.id);
-                  const canPlaceBet = true;
+                  const canPlaceBet = isBettingWindowOpen(opportunity);
                   const userBet = bets.find(bet => bet.id === opportunity.id);
+
+                  console.log("userBet", userBet);
                   
                   return (
                     <Card 
@@ -859,8 +881,10 @@ const BettingGroupScreen = () => {
                               )}
                               {opportunity.resultsFinalized ? (
                                 <Badge variant="success">Results In</Badge>
+                              ) : !canPlaceBet && opportunity.startTime > 0 ? (
+                                <Badge variant="ended">Betting Closed</Badge>
                               ) : opportunity.startTime > 0 ? (
-                                <Badge variant="active">Active</Badge>
+                                <Badge variant="active">Betting Open</Badge>
                               ) : (
                                 <Badge variant="ended">Not Started</Badge>
                               )}
@@ -872,7 +896,7 @@ const BettingGroupScreen = () => {
                             <Text fontSize="sm" fontWeight="semibold" mb={3} color="gray.700">
                               Betting Options:
                             </Text>
-                            {canPlaceBet ? (
+                            {canPlaceBet && !hasPlacedBet ? (
                               <Wrap gap={3}>
                                 {opportunity.options.map((option, index) => (
                                   <WrapItem key={index}>
@@ -880,7 +904,7 @@ const BettingGroupScreen = () => {
                                       size="md"
                                       variant="outline"
                                       loading={isPlacingBet && placingBetId === opportunity.id}
-                                      loadingText={encryptionState || "Placing..."}
+                                      loadingText={encryptionStep || "Placing..."}
                                       onClick={() => placeBet(opportunity.id, index)}
                                       disabled={!isCofhejsInitialized}
                                     >
@@ -905,43 +929,174 @@ const BettingGroupScreen = () => {
                               </HStack>
                             )}
                             
-                            {/* Status Messages */}
-                            {!canPlaceBet && !hasPlacedBet && opportunity.startTime > 0 && (
-                              <Text fontSize="sm" color="warning.500" mt={3} fontWeight="medium">
-                                Betting window closed for this opportunity
-                              </Text>
+                            {!canPlaceBet && !hasPlacedBet && opportunity.startTime === 0 && (
+                              <Card variant="outline" bg="gray.50" borderColor="gray.200" mt={3}>
+                                <CardBody p={4}>
+                                  <HStack gap={2} align="start">
+                                    <Text fontSize="lg">⏳</Text>
+                                    <VStack align="start" gap={1}>
+                                      <Text fontSize="sm" color="gray.700" fontWeight="semibold">
+                                        Event start time not set
+                                      </Text>
+                                      <Text fontSize="xs" color="gray.600">
+                                        Betting will open once the event start time is announced
+                                      </Text>
+                                    </VStack>
+                                  </HStack>
+                                </CardBody>
+                              </Card>
                             )}
                             
                             {canPlaceBet && !isCofhejsInitialized && (
-                              <Text fontSize="sm" color="error.500" mt={3} fontWeight="medium">
-                                Encryption setup required. Please refresh and try again.
-                              </Text>
+                              <Card variant="outline" bg="error.50" borderColor="error.200" mt={3}>
+                                <CardBody p={4}>
+                                  <HStack gap={2} align="start">
+                                    <Text fontSize="lg">🔐</Text>
+                                    <VStack align="start" gap={1}>
+                                      <Text fontSize="sm" color="error.700" fontWeight="semibold">
+                                        Encryption setup required
+                                      </Text>
+                                      <Text fontSize="xs" color="error.600">
+                                        Please refresh the page and try again
+                                      </Text>
+                                    </VStack>
+                                  </HStack>
+                                </CardBody>
+                              </Card>
                             )}
                           </Box>
                           
-                          {/* User's Bet Details */}
+                          {/* User's Bet Details - Progress Bar Style */}
                           {hasPlacedBet && userBet && (
-                            <Card variant="outline" bg="success.25" borderColor="success.300">
-                              <CardBody p={4}>
-                                <VStack align="stretch" gap={3}>
-                                  <Text fontSize="sm" fontWeight="semibold" color="success.700">
-                                    Your Bet Details:
-                                  </Text>
-                                  <HStack justify="space-between">
-                                    <Text fontSize="sm" color="gray.600">Prediction:</Text>
-                                    <Text fontSize="sm" fontFamily="mono" color="gray.800">
-                                      {formatEncryptedValue(userBet.predictedOption)}
+                            <Box 
+                              w="full" 
+                              p={1}
+                              bg="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                              borderRadius="lg"
+                              position="relative"
+                              overflow="hidden"
+                            >
+                              {/* Inner content box */}
+                              <Box
+                                w="full"
+                                p={4}
+                                bg="white"
+                                borderRadius="md"
+                                position="relative"
+                                overflow="hidden"
+                              >
+                                {/* Animated background pattern */}
+                                <Box
+                                  position="absolute"
+                                  top={0}
+                                  left={0}
+                                  right={0}
+                                  bottom={0}
+                                  opacity={0.05}
+                                  backgroundImage="repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(102, 126, 234, 0.1) 10px, rgba(102, 126, 234, 0.1) 20px)"
+                                  animation="slide 20s linear infinite"
+                                  css={{
+                                    '@keyframes slide': {
+                                      '0%': { transform: 'translateX(-20px)' },
+                                      '100%': { transform: 'translateX(20px)' }
+                                    }
+                                  }}
+                                />
+                                
+                                {/* Content */}
+                                <HStack justify="space-between" align="center" position="relative" zIndex={1}>
+                                  {/* Left: Status */}
+                                  <VStack align="start" gap={1}>
+                                    <HStack gap={2}>
+                                      <Box w={2} h={2} bg="green.400" borderRadius="full" />
+                                      <Text fontSize="sm" color="gray.800" fontWeight="bold">
+                                        Bet Active
+                                      </Text>
+                                    </HStack>
+                                    <Text fontSize="xs" color="gray.600">
+                                      Protected by FHE
                                     </Text>
+                                  </VStack>
+                                  
+                                  {/* Center: Data Pills */}
+                                  <HStack gap={4}>
+                                    <HStack 
+                                      bg="gray.100" 
+                                      px={3} 
+                                      py={2} 
+                                      borderRadius="full"
+                                      gap={2}
+                                    >
+                                      <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                        CHOICE
+                                      </Text>
+                                      {userBet.predictedOption && userBet.predictedOption !== '0' ? 
+                                        formatEncryptedValue(userBet.predictedOption) : 
+                                        <HStack 
+                                          gap={1} 
+                                          px={2} 
+                                          py={1} 
+                                          bg="white" 
+                                          borderRadius="md"
+                                          opacity={0.8}
+                                          transition="all 0.3s ease"
+                                          _hover={{ opacity: 1, transform: 'scale(1.05)' }}
+                                        >
+                                          <Text fontSize="xs" color="gray.500" fontWeight="bold" letterSpacing="wide">
+                                            NO VALUE
+                                          </Text>
+                                        </HStack>
+                                      }
+                                    </HStack>
+                                    
+                                    <HStack 
+                                      bg="gray.100" 
+                                      px={3} 
+                                      py={2} 
+                                      borderRadius="full"
+                                      gap={2}
+                                    >
+                                      <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                        SCORE
+                                      </Text>
+                                      {userBet.pointsAwarded && userBet.pointsAwarded !== '0' ? 
+                                        formatEncryptedValue(userBet.pointsAwarded) : 
+                                        <HStack 
+                                          gap={1} 
+                                          px={2} 
+                                          py={1} 
+                                          bg="white" 
+                                          borderRadius="md"
+                                          opacity={0.8}
+                                          transition="all 0.3s ease"
+                                          _hover={{ opacity: 1, transform: 'scale(1.05)' }}
+                                        >
+                                          <Text fontSize="xs" color="gray.500" fontWeight="bold" letterSpacing="wide">
+                                            NO VALUE
+                                          </Text>
+                                        </HStack>
+                                      }
+                                    </HStack>
                                   </HStack>
-                                  <HStack justify="space-between">
-                                    <Text fontSize="sm" color="gray.600">Points Awarded:</Text>
-                                    <Text fontSize="sm" fontFamily="mono" color="gray.800">
-                                      {formatEncryptedValue(userBet.pointsAwarded)}
-                                    </Text>
-                                  </HStack>
-                                </VStack>
-                              </CardBody>
-                            </Card>
+                                  
+                                  {/* Right: Lock Icon */}
+                                  <Box 
+                                    p={2} 
+                                    bg="gray.100" 
+                                    borderRadius="lg"
+                                    css={{
+                                      '@keyframes pulse': {
+                                        '0%, 100%': { transform: 'scale(1)' },
+                                        '50%': { transform: 'scale(1.1)' }
+                                      },
+                                      animation: 'pulse 3s ease-in-out infinite'
+                                    }}
+                                  >
+                                    <Text fontSize="lg">🔒</Text>
+                                  </Box>
+                                </HStack>
+                              </Box>
+                            </Box>
                           )}
                           
                           {/* Results */}
