@@ -16,7 +16,7 @@ import {
   WrapItem,
   Field,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiCheck, FiUser, FiLogOut, FiAlertTriangle, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiCheck, FiUser, FiLogOut, FiAlertTriangle, FiX, FiLock, FiShield } from 'react-icons/fi';
 import { ethers } from 'ethers';
 import { getGroupByAddress } from '../services/api';
 import { BETTING_GROUP_ABI, TOURNAMENT_ABI } from '../config';
@@ -29,7 +29,7 @@ import { EncryptedTag } from './ui/encrypted-tag';
 import type { Group } from '../types';
 import { CopyAddress } from './ui/copy-address';
 // Static imports for cofhejs
-import { cofhejs, Encryptable, EncryptStep } from 'cofhejs/web';
+import { cofhejs, Encryptable, EncryptStep, FheTypes } from 'cofhejs/web';
 
 // Define types for betting opportunities and user bets
 interface BettingOpportunity {
@@ -51,8 +51,8 @@ interface UserBet {
   endTime: number;
   resultsFinalized: boolean;
   result: number | null;
-  predictedOption: string; // Raw value, could be encrypted
-  pointsAwarded: string; // Raw value, could be encrypted
+  predictedOption: string;
+  pointsAwarded: string;
 }
 
 const BettingGroupScreen = () => {
@@ -77,6 +77,90 @@ const BettingGroupScreen = () => {
   const [placingBetId, setPlacingBetId] = useState<number | null>(null);
   const [encryptionStep, setEncryptionStep] = useState<EncryptStep | null>(null);
   const [isCofhejsInitialized, setIsCofhejsInitialized] = useState(false);
+  const [unsealingValues, setUnsealingValues] = useState<{[key: string]: boolean}>({});
+  const [unsealedValues, setUnsealedValues] = useState<{[key: string]: string}>({});
+  
+  // Add state for user's total points
+  const [userTotalPoints, setUserTotalPoints] = useState<string>('');
+  
+  // Add state for finalization process
+  const [isDecryptionRequested, setIsDecryptionRequested] = useState(false);
+  const [isRequestingDecryption, setIsRequestingDecryption] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [tournamentEnded, setTournamentEnded] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<{addresses: string[], points: number[]} | null>(null);
+  const [participantNames, setParticipantNames] = useState<{[address: string]: string}>({});
+  const [userClaimableBalance, setUserClaimableBalance] = useState<string>('0');
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [currentUserAddress, setCurrentUserAddress] = useState<string>('');
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  
+  // Local storage key for caching decrypted values
+  const getCacheKey = () => `fhe-betting-decrypted-values-${groupAddress || 'unknown'}`;
+  
+  // Load cached decrypted values from local storage
+  const loadCachedValues = useCallback(() => {
+    if (!groupAddress) return;
+    
+    try {
+      const cached = localStorage.getItem(getCacheKey());
+      if (cached) {
+        const parsedCache = JSON.parse(cached);
+        console.log('Loaded cached decrypted values for group:', groupAddress, parsedCache);
+        setUnsealedValues(parsedCache);
+        
+        // Show toast if cached values were loaded
+        const cacheCount = Object.keys(parsedCache).length;
+        if (cacheCount > 0) {
+          toaster.success({
+            title: 'Cache Loaded',
+            description: `Loaded ${cacheCount} previously decrypted values from cache`
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading cached values:', error);
+    }
+  }, [groupAddress]);
+  
+  // Save decrypted value to local storage
+  const saveCachedValue = useCallback((valueKey: string, decryptedValue: string) => {
+    if (!groupAddress) return;
+    
+    try {
+      const cacheKey = getCacheKey();
+      const cached = localStorage.getItem(cacheKey);
+      const existingCache = cached ? JSON.parse(cached) : {};
+      const updatedCache = {
+        ...existingCache,
+        [valueKey]: decryptedValue
+      };
+      localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+      console.log(`Cached decrypted value for ${valueKey} in group ${groupAddress}:`, decryptedValue);
+    } catch (error) {
+      console.error('Error saving cached value:', error);
+    }
+  }, [groupAddress]);
+  
+  // Clear cached values (optional utility function)
+  const clearCachedValues = useCallback(() => {
+    if (!groupAddress) return;
+    
+    try {
+      const cacheKey = getCacheKey();
+      localStorage.removeItem(cacheKey);
+      setUnsealedValues({});
+      console.log('Cleared all cached decrypted values for group:', groupAddress);
+      
+      // Show toast notification
+      toaster.success({
+        title: 'Cache Cleared',
+        description: 'All cached decrypted values have been removed'
+      });
+    } catch (error) {
+      console.error('Error clearing cached values:', error);
+    }
+  }, [groupAddress]);
   
   // Reference to provider and initialization status
   const providerRef = useRef<ethers.BrowserProvider | null>(null);
@@ -204,6 +288,7 @@ const BettingGroupScreen = () => {
     try {
       const signer = await providerRef.current.getSigner();
       const userAddress = await signer.getAddress();
+      setCurrentUserAddress(userAddress);
       
       const contract = new ethers.Contract(
         groupAddress,
@@ -354,6 +439,315 @@ const BettingGroupScreen = () => {
     }
   }, [groupAddress, providerRef, isUserRegistered, tournamentAddress]);
   
+  // Fetch user's total points
+  const fetchUserTotalPoints = useCallback(async () => {
+    if (!groupAddress || !providerRef.current || !isUserRegistered) return;
+    
+    try {
+      const signer = await providerRef.current.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      console.log("Fetching user total points for address:", userAddress);
+      
+      // Get user's encrypted total points
+      const encryptedTotalPoints = await contract.getParticipantTotalPoints(userAddress);
+      
+      console.log("Encrypted total points:", encryptedTotalPoints);
+      
+      // Convert to string for storage
+      const totalPointsString = encryptedTotalPoints.toString();
+      setUserTotalPoints(totalPointsString);
+      
+      console.log("User total points set:", totalPointsString);
+    } catch (error) {
+      console.error('Error fetching user total points:', error);
+    }
+  }, [groupAddress, providerRef, isUserRegistered]);
+  
+  // Check if tournament has ended
+  const checkTournamentEnded = useCallback(async () => {
+    if (!tournamentAddress || !providerRef.current) return;
+    
+    try {
+      const tournamentContract = new ethers.Contract(
+        tournamentAddress,
+        TOURNAMENT_ABI,
+        providerRef.current
+      );
+      
+      const endTime = await tournamentContract.endTime();
+      const now = getCurrentBlockchainTime();
+      
+      setTournamentEnded(now >= Number(endTime));
+    } catch (error) {
+      console.error('Error checking if tournament has ended:', error);
+    }
+  }, [tournamentAddress]);
+  
+  // Check decryption status
+  const checkDecryptionStatus = useCallback(async () => {
+    if (!groupAddress || !providerRef.current) return;
+    
+    try {
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      const decryptionRequested = await contract.isDecryptionRequested();
+      setIsDecryptionRequested(decryptionRequested);
+    } catch (error) {
+      console.error('Error checking decryption status:', error);
+    }
+  }, [groupAddress]);
+  
+  // Fetch leaderboard data
+  const fetchLeaderboard = useCallback(async () => {
+    if (!groupAddress || !providerRef.current || isActive) return;
+    
+    try {
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      const [addresses, points] = await contract.getLeaderboard();
+      setLeaderboard({
+        addresses: addresses,
+        points: points.map((p: any) => Number(p))
+      });
+    } catch (error) {
+      console.error('Error fetching leaderboard:', error);
+      // Leaderboard might not be finalized yet, this is expected
+    }
+  }, [groupAddress, isActive]);
+  
+  // Check user's claimable balance
+  const checkClaimableBalance = useCallback(async () => {
+    if (!groupAddress || !providerRef.current || !isUserRegistered) return;
+    
+    try {
+      const signer = await providerRef.current.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      const balance = await contract.claimableBalance(userAddress);
+      setUserClaimableBalance(ethers.formatEther(balance));
+    } catch (error) {
+      console.error('Error checking claimable balance:', error);
+    }
+  }, [groupAddress, isUserRegistered]);
+  
+  // Fetch participant names from events
+  const fetchParticipantNames = useCallback(async () => {
+    if (!groupAddress || !providerRef.current) return;
+    
+    try {
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      // Get ParticipantRegistered events
+      const filter = contract.filters.ParticipantRegistered();
+      const events = await contract.queryFilter(filter);
+      
+      const names: {[address: string]: string} = {};
+      events.forEach((event: any) => {
+        if (event.args) {
+          names[event.args.participant.toLowerCase()] = event.args.name;
+        }
+      });
+      
+      setParticipantNames(names);
+    } catch (error) {
+      console.error('Error fetching participant names:', error);
+    }
+  }, [groupAddress]);
+  
+  // Check if current user is platform admin
+  const checkPlatformAdmin = useCallback(async () => {
+    if (!groupAddress || !providerRef.current || !currentUserAddress) return;
+    
+    try {
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      const platformAdmin = await contract.getPlatformAdmin();
+      setIsPlatformAdmin(platformAdmin.toLowerCase() === currentUserAddress.toLowerCase());
+    } catch (error) {
+      console.error('Error checking platform admin:', error);
+    }
+  }, [groupAddress, currentUserAddress]);
+  
+  // Request points decryption (Step 1)
+  const requestPointsDecryption = async () => {
+    if (!groupAddress || !providerRef.current || !tournamentEnded || isDecryptionRequested) return;
+    
+    try {
+      setIsRequestingDecryption(true);
+      
+      const signer = await providerRef.current.getSigner();
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        signer
+      );
+      
+      const loadingToastId = toaster.create({
+        title: 'Requesting Decryption',
+        description: 'Please confirm the transaction...',
+        type: 'loading'
+      });
+      
+      const tx = await contract.requestPointsDecryption();
+      
+      toaster.update(loadingToastId, {
+        title: 'Transaction Sent',
+        description: 'Please wait for confirmation...',
+        type: 'loading'
+      });
+      
+      await tx.wait();
+      
+      toaster.dismiss(loadingToastId);
+      toaster.success({
+        title: 'Decryption Requested',
+        description: 'Points decryption has been initiated. You can now proceed to finalize the group.'
+      });
+      
+      setIsDecryptionRequested(true);
+      
+    } catch (error: any) {
+      console.error('Error requesting decryption:', error);
+      toaster.error({
+        title: 'Decryption Request Failed',
+        description: error.message || 'Failed to request points decryption'
+      });
+    } finally {
+      setIsRequestingDecryption(false);
+    }
+  };
+  
+  // Finalize and distribute (Step 2)
+  const finalizeAndDistribute = async () => {
+    if (!groupAddress || !providerRef.current || !isDecryptionRequested || !isActive) return;
+    
+    try {
+      setIsFinalizing(true);
+      
+      const signer = await providerRef.current.getSigner();
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        signer
+      );
+      
+      const loadingToastId = toaster.create({
+        title: 'Finalizing Group',
+        description: 'Please confirm the transaction...',
+        type: 'loading'
+      });
+      
+      const tx = await contract.finalizeAndDistribute();
+      
+      toaster.update(loadingToastId, {
+        title: 'Transaction Sent',
+        description: 'Please wait for confirmation...',
+        type: 'loading'
+      });
+      
+      await tx.wait();
+      
+      toaster.dismiss(loadingToastId);
+      toaster.success({
+        title: 'Group Finalized',
+        description: 'The betting group has been finalized and prizes distributed!'
+      });
+      
+      // Update states
+      setIsActive(false);
+      checkClaimableBalance();
+      fetchLeaderboard();
+      
+    } catch (error: any) {
+      console.error('Error finalizing group:', error);
+      toaster.error({
+        title: 'Finalization Failed',
+        description: error.message || 'Failed to finalize the betting group'
+      });
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+  
+  // Claim winnings
+  const claimWinnings = async () => {
+    if (!groupAddress || !providerRef.current || userClaimableBalance === '0') return;
+    
+    try {
+      setIsClaiming(true);
+      
+      const signer = await providerRef.current.getSigner();
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        signer
+      );
+      
+      const loadingToastId = toaster.create({
+        title: 'Claiming Winnings',
+        description: 'Please confirm the transaction...',
+        type: 'loading'
+      });
+      
+      const tx = await contract.claim();
+      
+      toaster.update(loadingToastId, {
+        title: 'Transaction Sent',
+        description: 'Please wait for confirmation...',
+        type: 'loading'
+      });
+      
+      await tx.wait();
+      
+      toaster.dismiss(loadingToastId);
+      toaster.success({
+        title: 'Winnings Claimed',
+        description: `Successfully claimed ${userClaimableBalance} ETH!`
+      });
+      
+      // Update claimable balance
+      setUserClaimableBalance('0');
+      
+    } catch (error: any) {
+      console.error('Error claiming winnings:', error);
+      toaster.error({
+        title: 'Claim Failed',
+        description: error.message || 'Failed to claim winnings'
+      });
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+  
   // Place a bet on a betting opportunity
   const placeBet = async (betId: number, optionIndex: number) => {
     if (!groupAddress || !providerRef.current || !isCofhejsInitialized || !isUserRegistered) return;
@@ -444,6 +838,7 @@ const BettingGroupScreen = () => {
       
       // Update user's bets
       fetchUserBets();
+      fetchUserTotalPoints();
       
     } catch (error: any) {
       console.error('Error placing bet:', error);
@@ -462,6 +857,81 @@ const BettingGroupScreen = () => {
       setEncryptionStep(null);
 
       toaster.dismiss(loadingToastId);
+    }
+  };
+  
+  // Unseal an encrypted value
+  const unsealValue = async (encryptedValue: string, fheType: FheTypes, valueKey: string) => {
+    if (!isCofhejsInitialized || !providerRef.current) {
+      toaster.error({
+        title: 'Unsealing Failed',
+        description: 'Encryption system not initialized'
+      });
+      return;
+    }
+
+    // Check if already unsealed
+    if (unsealedValues[valueKey] !== undefined) {
+      return;
+    }
+
+    try {
+      setUnsealingValues(prev => ({ ...prev, [valueKey]: true }));
+
+      // Get or create permit
+      const signer = await providerRef.current.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      const permit = await cofhejs.createPermit({
+        type: 'self',
+        issuer: userAddress
+      });
+
+      // Check if permit was created successfully
+      if (!permit.data) {
+        throw new Error('Failed to create permit');
+      }
+
+      // Unseal the value
+      const permitHash = permit.data.getHash();
+      console.log("ctHash", encryptedValue);
+      const unsealResult = await cofhejs.unseal(
+        BigInt(encryptedValue), 
+        fheType, 
+        permit.data.issuer, 
+        permitHash
+      );
+
+      console.log("Unseal result:", unsealResult);
+
+      // Check if unsealing was successful
+      if (!unsealResult.success) {
+        throw new Error(unsealResult.error?.message || 'Failed to unseal value');
+      }
+
+      // Store the unsealed value - convert to string
+      const unsealedString = unsealResult.data.toString();
+      setUnsealedValues(prev => ({ 
+        ...prev, 
+        [valueKey]: unsealedString 
+      }));
+      
+      // Save to local storage cache
+      saveCachedValue(valueKey, unsealedString);
+
+      toaster.success({
+        title: 'Value Decrypted',
+        description: `Decrypted value: ${unsealedString}`
+      });
+
+    } catch (error: any) {
+      console.error('Error unsealing value:', error);
+      toaster.error({
+        title: 'Unsealing Failed',
+        description: error.message || 'Failed to decrypt value'
+      });
+    } finally {
+      setUnsealingValues(prev => ({ ...prev, [valueKey]: false }));
     }
   };
   
@@ -588,7 +1058,8 @@ const BettingGroupScreen = () => {
   // Fetch data when component mounts
   useEffect(() => {
     fetchGroup();
-  }, [fetchGroup]);
+    loadCachedValues(); // Load cached decrypted values
+  }, [fetchGroup, loadCachedValues]);
   
   // Fetch contract data when provider is available
   useEffect(() => {
@@ -596,22 +1067,41 @@ const BettingGroupScreen = () => {
       checkGroupActive();
       checkUserRegistered();
       checkTournamentStarted();
+      checkTournamentEnded();
+      checkDecryptionStatus();
       fetchParticipants();
       fetchBettingOpportunities();
+      fetchParticipantNames();
       
       // Only initialize cofhejs if not already initialized or initializing
       if (!isCofhejsInitialized && !initializingRef.current) {
         initializeCofhejs();
       }
     }
-  }, [checkGroupActive, checkUserRegistered, checkTournamentStarted, fetchParticipants, fetchBettingOpportunities, initializeCofhejs, isCofhejsInitialized]);
+  }, [checkGroupActive, checkUserRegistered, checkTournamentStarted, checkTournamentEnded, checkDecryptionStatus, fetchParticipants, fetchBettingOpportunities, fetchParticipantNames, initializeCofhejs, isCofhejsInitialized]);
   
   // Fetch user bets when registered status changes
   useEffect(() => {
     if (isUserRegistered) {
       fetchUserBets();
+      fetchUserTotalPoints();
     }
-  }, [isUserRegistered, fetchUserBets]);
+  }, [isUserRegistered, fetchUserBets, fetchUserTotalPoints]);
+  
+  // Fetch finalization data when group becomes inactive
+  useEffect(() => {
+    if (!isActive && isUserRegistered) {
+      fetchLeaderboard();
+      checkClaimableBalance();
+    }
+  }, [isActive, isUserRegistered, fetchLeaderboard, checkClaimableBalance]);
+  
+  // Check platform admin when user address changes
+  useEffect(() => {
+    if (currentUserAddress) {
+      checkPlatformAdmin();
+    }
+  }, [currentUserAddress, checkPlatformAdmin]);
   
   // Return to tournament page
   const goBackToTournament = () => {
@@ -665,12 +1155,19 @@ const BettingGroupScreen = () => {
   };
   
   // Helper to format encrypted values for display
-  const formatEncryptedValue = (value: string) => {
+  const formatEncryptedValue = (value: string, fheType: FheTypes, valueKey: string, options?: string[]) => {
     if (!value || value === '0') {
       return 'No value';
     }
     
-    return <EncryptedTag />
+    return (
+      <EncryptedTag 
+        onUnseal={() => unsealValue(value, fheType, valueKey)}
+        isUnsealing={unsealingValues[valueKey] || false}
+        unsealedValue={unsealedValues[valueKey]}
+        options={options}
+      />
+    );
   };
   
   if (loading) {
@@ -826,6 +1323,125 @@ const BettingGroupScreen = () => {
         </Card>
       )}
       
+      {/* User Total Points Section */}
+      {isUserRegistered && (
+        <Card variant="outline">
+          <CardHeader>
+            <Heading size="lg" color="gray.800">Your Performance</Heading>
+          </CardHeader>
+          <CardBody>
+            <VStack align="stretch" gap={4}>
+              <Box>
+                <Text fontSize="sm" fontWeight="semibold" mb={3} color="gray.700">
+                  Total Points Earned:
+                </Text>
+                <Box 
+                  w="full" 
+                  p={1}
+                  bg="linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
+                  borderRadius="lg"
+                  position="relative"
+                  overflow="hidden"
+                >
+                  <Box
+                    w="full"
+                    p={4}
+                    bg="white"
+                    borderRadius="md"
+                    position="relative"
+                    overflow="hidden"
+                  >
+                    <Box
+                      position="absolute"
+                      top={0}
+                      left={0}
+                      right={0}
+                      bottom={0}
+                      opacity={0.05}
+                      backgroundImage="repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(102, 126, 234, 0.1) 10px, rgba(102, 126, 234, 0.1) 20px)"
+                      animation="slide 20s linear infinite"
+                      css={{
+                        '@keyframes slide': {
+                          '0%': { transform: 'translateX(-20px)' },
+                          '100%': { transform: 'translateX(20px)' }
+                        }
+                      }}
+                    />
+                    
+                    <HStack justify="space-between" align="center" position="relative" zIndex={1}>
+                      <VStack align="start" gap={1}>
+                        <HStack gap={2}>
+                          <Box w={2} h={2} bg="blue.400" borderRadius="full" />
+                          <Text fontSize="sm" color="gray.800" fontWeight="bold">
+                            Performance Score
+                          </Text>
+                        </HStack>
+                        <HStack gap={2} align="center">
+                          <Icon as={FiLock} color="purple.600" boxSize={3} />
+                          <Text fontSize="sm" color="purple.700" fontWeight="bold" letterSpacing="wide">
+                            PROTECTED BY FHE
+                          </Text>
+                        </HStack>
+                      </VStack>
+                      
+                      <HStack 
+                        bg="gray.100" 
+                        px={4} 
+                        py={3} 
+                        borderRadius="full"
+                        gap={2}
+                      >
+                        <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                          TOTAL POINTS
+                        </Text>
+                        {userTotalPoints && userTotalPoints !== '0' ? 
+                          formatEncryptedValue(userTotalPoints, FheTypes.Uint256, `totalPoints-${groupAddress}`) : 
+                          <HStack 
+                            gap={1} 
+                            px={2} 
+                            py={1} 
+                            bg="white" 
+                            borderRadius="md"
+                            opacity={0.8}
+                            transition="all 0.3s ease"
+                            _hover={{ opacity: 1, transform: 'scale(1.05)' }}
+                          >
+                            <Text fontSize="xs" color="gray.500" fontWeight="bold" letterSpacing="wide">
+                              NO POINTS YET
+                            </Text>
+                          </HStack>
+                        }
+                      </HStack>
+                      
+                      <Box 
+                        p={3} 
+                        bg="linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
+                        borderRadius="xl"
+                        boxShadow="0 4px 12px rgba(102, 126, 234, 0.3)"
+                        css={{
+                          '@keyframes pulse': {
+                            '0%, 100%': { transform: 'scale(1)', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)' },
+                            '50%': { transform: 'scale(1.05)', boxShadow: '0 6px 16px rgba(102, 126, 234, 0.5)' }
+                          },
+                          animation: 'pulse 3s ease-in-out infinite'
+                        }}
+                      >
+                        <Icon 
+                          as={FiShield} 
+                          color="white" 
+                          boxSize={5}
+                          filter="drop-shadow(0 0 4px rgba(255,255,255,0.8))"
+                        />
+                      </Box>
+                    </HStack>
+                  </Box>
+                </Box>
+              </Box>
+            </VStack>
+          </CardBody>
+        </Card>
+      )}
+      
       {/* Betting Opportunities Section */}
       {isUserRegistered && (
         <Card variant="default">
@@ -848,8 +1464,6 @@ const BettingGroupScreen = () => {
                   const hasPlacedBet = hasBetBeenPlaced(opportunity.id);
                   const canPlaceBet = isBettingWindowOpen(opportunity);
                   const userBet = bets.find(bet => bet.id === opportunity.id);
-
-                  console.log("userBet", userBet);
                   
                   return (
                     <Card 
@@ -896,7 +1510,7 @@ const BettingGroupScreen = () => {
                             <Text fontSize="sm" fontWeight="semibold" mb={3} color="gray.700">
                               Betting Options:
                             </Text>
-                            {canPlaceBet && !hasPlacedBet ? (
+                            {canPlaceBet ? (
                               <Wrap gap={3}>
                                 {opportunity.options.map((option, index) => (
                                   <WrapItem key={index}>
@@ -918,12 +1532,19 @@ const BettingGroupScreen = () => {
                                 {opportunity.options.map((option, index) => (
                                   <Badge 
                                     key={index} 
-                                    variant="outline"
+                                    variant={opportunity.resultsFinalized && opportunity.result === index ? "solid" : "outline"}
+                                    colorScheme={opportunity.resultsFinalized && opportunity.result === index ? "green" : "gray"}
                                     px={3}
                                     py={2}
                                     fontSize="sm"
+                                    bg={opportunity.resultsFinalized && opportunity.result === index ? "green.500" : undefined}
+                                    color={opportunity.resultsFinalized && opportunity.result === index ? "white" : undefined}
+                                    borderColor={opportunity.resultsFinalized && opportunity.result === index ? "green.500" : undefined}
                                   >
                                     {option}
+                                    {opportunity.resultsFinalized && opportunity.result === index && (
+                                      <Icon as={FiCheck} ml={2} color="white" />
+                                    )}
                                   </Badge>
                                 ))}
                               </HStack>
@@ -1013,9 +1634,12 @@ const BettingGroupScreen = () => {
                                         Bet Active
                                       </Text>
                                     </HStack>
-                                    <Text fontSize="xs" color="gray.600">
-                                      Protected by FHE
-                                    </Text>
+                                    <HStack gap={2} align="center">
+                                      <Icon as={FiLock} color="purple.600" boxSize={3} />
+                                      <Text fontSize="sm" color="purple.700" fontWeight="bold" letterSpacing="wide">
+                                        PROTECTED BY FHE
+                                      </Text>
+                                    </HStack>
                                   </VStack>
                                   
                                   {/* Center: Data Pills */}
@@ -1031,7 +1655,7 @@ const BettingGroupScreen = () => {
                                         CHOICE
                                       </Text>
                                       {userBet.predictedOption && userBet.predictedOption !== '0' ? 
-                                        formatEncryptedValue(userBet.predictedOption) : 
+                                        formatEncryptedValue(userBet.predictedOption, FheTypes.Uint16, `predictedOption-${userBet.id}`, opportunity.options) : 
                                         <HStack 
                                           gap={1} 
                                           px={2} 
@@ -1060,7 +1684,7 @@ const BettingGroupScreen = () => {
                                         SCORE
                                       </Text>
                                       {userBet.pointsAwarded && userBet.pointsAwarded !== '0' ? 
-                                        formatEncryptedValue(userBet.pointsAwarded) : 
+                                        formatEncryptedValue(userBet.pointsAwarded, FheTypes.Uint256, `pointsAwarded-${userBet.id}`) : 
                                         <HStack 
                                           gap={1} 
                                           px={2} 
@@ -1079,38 +1703,30 @@ const BettingGroupScreen = () => {
                                     </HStack>
                                   </HStack>
                                   
-                                  {/* Right: Lock Icon */}
+                                  {/* Right: Security Icon */}
                                   <Box 
-                                    p={2} 
-                                    bg="gray.100" 
-                                    borderRadius="lg"
+                                    p={3} 
+                                    bg="linear-gradient(135deg, #667eea 0%, #764ba2 100%)" 
+                                    borderRadius="xl"
+                                    boxShadow="0 4px 12px rgba(102, 126, 234, 0.3)"
                                     css={{
                                       '@keyframes pulse': {
-                                        '0%, 100%': { transform: 'scale(1)' },
-                                        '50%': { transform: 'scale(1.1)' }
+                                        '0%, 100%': { transform: 'scale(1)', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)' },
+                                        '50%': { transform: 'scale(1.05)', boxShadow: '0 6px 16px rgba(102, 126, 234, 0.5)' }
                                       },
                                       animation: 'pulse 3s ease-in-out infinite'
                                     }}
                                   >
-                                    <Text fontSize="lg">🔒</Text>
+                                    <Icon 
+                                      as={FiShield} 
+                                      color="white" 
+                                      boxSize={5}
+                                      filter="drop-shadow(0 0 4px rgba(255,255,255,0.8))"
+                                    />
                                   </Box>
                                 </HStack>
                               </Box>
                             </Box>
-                          )}
-                          
-                          {/* Results */}
-                          {opportunity.resultsFinalized && (
-                            <Card variant="outline" bg="brand.50" borderColor="brand.200">
-                              <CardBody p={4}>
-                                <HStack gap={3}>
-                                  <Text fontWeight="semibold" color="brand.700">Final Result:</Text>
-                                  <Text color="brand.800" fontWeight="bold">
-                                    {opportunity.options[opportunity.result || 0]}
-                                  </Text>
-                                </HStack>
-                              </CardBody>
-                            </Card>
                           )}
                         </VStack>
                       </CardBody>
@@ -1119,6 +1735,220 @@ const BettingGroupScreen = () => {
                 })}
               </VStack>
             )}
+          </CardBody>
+        </Card>
+      )}
+      
+      {/* Finalization Section - Only show to platform admin when tournament has ended */}
+      {tournamentEnded && isActive && isPlatformAdmin && (
+        <Card variant="outline" borderColor="warning.200" bg="warning.50">
+          <CardHeader>
+            <Heading size="lg" color="warning.800">Finalize Betting Group</Heading>
+          </CardHeader>
+          <CardBody>
+            <VStack align="stretch" gap={6}>
+              <Text color="warning.700" fontSize="sm">
+                The tournament has ended. You can now finalize this betting group in two steps:
+              </Text>
+              
+              {/* Step 1: Request Decryption */}
+              <Card variant="outline" bg="white">
+                <CardBody p={4}>
+                  <HStack justify="space-between" align="center">
+                    <VStack align="start" gap={1}>
+                      <HStack gap={2}>
+                        <Box 
+                          w={6} 
+                          h={6} 
+                          bg={isDecryptionRequested ? "success.500" : "gray.300"} 
+                          borderRadius="full" 
+                          display="flex" 
+                          alignItems="center" 
+                          justifyContent="center"
+                        >
+                          {isDecryptionRequested ? (
+                            <Icon as={FiCheck} color="white" boxSize={3} />
+                          ) : (
+                            <Text color="white" fontSize="xs" fontWeight="bold">1</Text>
+                          )}
+                        </Box>
+                        <Text fontWeight="semibold" color="gray.800">
+                          Request Points Decryption
+                        </Text>
+                      </HStack>
+                      <Text fontSize="sm" color="gray.600" ml={8}>
+                        Initiate decryption of all participant points for final ranking
+                      </Text>
+                    </VStack>
+                    
+                    <Button
+                      variant={isDecryptionRequested ? "outline" : "solid"}
+                      size="sm"
+                      loading={isRequestingDecryption}
+                      onClick={requestPointsDecryption}
+                      disabled={isDecryptionRequested}
+                    >
+                      {isDecryptionRequested ? 'Decryption Requested' : 'Request Decryption'}
+                    </Button>
+                  </HStack>
+                </CardBody>
+              </Card>
+              
+              {/* Step 2: Finalize and Distribute */}
+              <Card variant="outline" bg="white">
+                <CardBody p={4}>
+                  <HStack justify="space-between" align="center">
+                    <VStack align="start" gap={1}>
+                      <HStack gap={2}>
+                        <Box 
+                          w={6} 
+                          h={6} 
+                          bg={!isActive ? "success.500" : isDecryptionRequested ? "blue.500" : "gray.300"} 
+                          borderRadius="full" 
+                          display="flex" 
+                          alignItems="center" 
+                          justifyContent="center"
+                        >
+                          {!isActive ? (
+                            <Icon as={FiCheck} color="white" boxSize={3} />
+                          ) : (
+                            <Text color="white" fontSize="xs" fontWeight="bold">2</Text>
+                          )}
+                        </Box>
+                        <Text fontWeight="semibold" color="gray.800">
+                          Finalize and Distribute Prizes
+                        </Text>
+                      </HStack>
+                      <Text fontSize="sm" color="gray.600" ml={8}>
+                        Complete the finalization and distribute prizes to winners
+                      </Text>
+                    </VStack>
+                    
+                    <Button
+                      variant={!isActive ? "outline" : "solid"}
+                      size="sm"
+                      loading={isFinalizing}
+                      onClick={finalizeAndDistribute}
+                      disabled={!isDecryptionRequested || !isActive}
+                    >
+                      {!isActive ? 'Group Finalized' : 'Finalize Group'}
+                    </Button>
+                  </HStack>
+                </CardBody>
+              </Card>
+            </VStack>
+          </CardBody>
+        </Card>
+      )}
+      
+      {/* Leaderboard Section - Show when group is finalized */}
+      {!isActive && leaderboard && (
+        <Card variant="outline">
+          <CardHeader>
+            <Heading size="lg" color="gray.800">Final Leaderboard</Heading>
+          </CardHeader>
+          <CardBody>
+            <VStack align="stretch" gap={4}>
+              {leaderboard.addresses.map((address, index) => {
+                const points = leaderboard.points[index];
+                const isCurrentUser = address.toLowerCase() === currentUserAddress.toLowerCase();
+                const prizePercentage = group?.prizeDistribution[index] ? group.prizeDistribution[index] / 10 : 0;
+                const prizeAmount = prizePercentage > 0 ? (parseFloat(prizePool) * prizePercentage / 100).toFixed(4) : '0';
+                
+                return (
+                  <Card 
+                    key={address} 
+                    variant={isCurrentUser ? "betting" : "outline"}
+                    bg={isCurrentUser ? "blue.50" : "white"}
+                    borderColor={isCurrentUser ? "blue.200" : "gray.200"}
+                  >
+                    <CardBody p={4}>
+                      <HStack justify="space-between" align="center">
+                        <HStack gap={4}>
+                          <Box 
+                            w={10} 
+                            h={10} 
+                            bg={index === 0 ? "yellow.400" : index === 1 ? "gray.400" : index === 2 ? "orange.400" : "gray.200"} 
+                            borderRadius="full" 
+                            display="flex" 
+                            alignItems="center" 
+                            justifyContent="center"
+                          >
+                            <Text color={index < 3 ? "white" : "gray.600"} fontSize="lg" fontWeight="bold">
+                              {index + 1}
+                            </Text>
+                          </Box>
+                          
+                          <VStack align="start" gap={1}>
+                            <HStack gap={2}>
+                              <Text fontWeight="semibold" color="gray.800">
+                                {participantNames[address] || `Player ${index + 1}`}
+                              </Text>
+                              {isCurrentUser && (
+                                <Badge variant="solid" colorScheme="blue">You</Badge>
+                              )}
+                            </HStack>
+                            <Text fontSize="sm" color="gray.600" fontFamily="mono">
+                              {address.slice(0, 6)}...{address.slice(-4)}
+                            </Text>
+                          </VStack>
+                        </HStack>
+                        
+                        <VStack align="end" gap={1}>
+                          <Text fontWeight="bold" color="gray.800">
+                            {points} points
+                          </Text>
+                          {prizePercentage > 0 && (
+                            <VStack align="end" gap={0}>
+                              <Text fontSize="sm" color="success.600" fontWeight="semibold">
+                                {prizePercentage}% - {prizeAmount} ETH
+                              </Text>
+                            </VStack>
+                          )}
+                        </VStack>
+                      </HStack>
+                    </CardBody>
+                  </Card>
+                );
+              })}
+            </VStack>
+          </CardBody>
+        </Card>
+      )}
+      
+      {/* Claim Winnings Section */}
+      {!isActive && isUserRegistered && parseFloat(userClaimableBalance) > 0 && (
+        <Card variant="outline" borderColor="success.200" bg="success.50">
+          <CardHeader>
+            <Heading size="lg" color="success.800">Congratulations! 🎉</Heading>
+          </CardHeader>
+          <CardBody>
+            <VStack align="stretch" gap={4}>
+              <Text color="success.700">
+                You have winnings to claim from this betting group!
+              </Text>
+              
+              <HStack justify="space-between" align="center">
+                <VStack align="start" gap={1}>
+                  <Text fontSize="sm" color="success.600" fontWeight="medium">
+                    Claimable Amount
+                  </Text>
+                  <Text fontSize="2xl" color="success.800" fontWeight="bold">
+                    {userClaimableBalance} ETH
+                  </Text>
+                </VStack>
+                
+                <Button
+                  variant="solid"
+                  colorScheme="green"
+                  size="lg"
+                  loading={isClaiming}
+                  onClick={claimWinnings}
+                >
+                  Claim Winnings
+                </Button>
+              </HStack>
+            </VStack>
           </CardBody>
         </Card>
       )}

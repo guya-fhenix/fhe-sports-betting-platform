@@ -34,6 +34,7 @@ import {
   formatDateForLocalInput
 } from '../utils/time';
 import { CopyAddress } from './ui/copy-address';
+import { BETTING_GROUP_ABI } from '../config';
 
 const TournamentScreen = () => {
   const navigate = useNavigate();
@@ -369,6 +370,9 @@ const TournamentScreen = () => {
       // Refresh opportunities
       fetchBettingOpportunities();
       
+      // Automatically process results for all betting groups
+      await processResultsForAllGroups(dialogData.betId);
+      
     } catch (error: any) {
       console.error('Error setting results:', error);
       
@@ -569,14 +573,24 @@ const TournamentScreen = () => {
     }
   };
   
-  // Add canUpdateStartTime function to check if start time can be updated
-  const canUpdateStartTime = (opportunity: any): boolean => {
-    if (!opportunity) return false;
+  // Check if we can update start time (not too close to start)
+  const canUpdateStartTime = (opportunity: any) => {
+    if (opportunity.resultsFinalized) return false;
+    if (opportunity.startTime === 0) return true; // Can always set if not set
     
-    // Can update if start time is 0 (not set) or 
-    // if it's set but more than 60 seconds in the future
-    return opportunity.startTime === 0 || 
-           (opportunity.startTime > 0 && isTimestampInFuture(opportunity.startTime, 60));
+    const now = getCurrentBlockchainTime();
+    const oneMinuteBuffer = 60; // 1 minute buffer before start time
+    
+    return now < opportunity.startTime - oneMinuteBuffer;
+  };
+
+  // Check if results can be set for a betting opportunity
+  const canSetResults = (opportunity: any) => {
+    if (opportunity.resultsFinalized) return false;
+    if (opportunity.startTime === 0) return false; // Start time must be set
+    
+    const now = getCurrentBlockchainTime();
+    return now >= opportunity.startTime; // Start time must have passed
   };
   
   const fetchGroups = async () => {
@@ -718,9 +732,9 @@ const TournamentScreen = () => {
                       size="md"
                       variant={opportunity.resultsFinalized && opportunity.result === idx ? "solid" : "outline"}
                       colorScheme={opportunity.resultsFinalized && opportunity.result === idx ? "green" : "gray"}
-                      onClick={() => !opportunity.resultsFinalized && setResults(opportunity.id, idx)}
-                      disabled={opportunity.resultsFinalized}
-                      cursor={opportunity.resultsFinalized ? "default" : "pointer"}
+                      onClick={() => canSetResults(opportunity) && setResults(opportunity.id, idx)}
+                      disabled={opportunity.resultsFinalized || !canSetResults(opportunity)}
+                      cursor={opportunity.resultsFinalized || !canSetResults(opportunity) ? "default" : "pointer"}
                       h="auto"
                       py={3}
                       px={4}
@@ -728,6 +742,13 @@ const TournamentScreen = () => {
                       position="relative"
                       whiteSpace="normal"
                       textAlign="center"
+                      opacity={!canSetResults(opportunity) && !opportunity.resultsFinalized ? 0.6 : 1}
+                      bg={opportunity.resultsFinalized && opportunity.result === idx ? "green.500" : undefined}
+                      color={opportunity.resultsFinalized && opportunity.result === idx ? "white" : undefined}
+                      borderColor={opportunity.resultsFinalized && opportunity.result === idx ? "green.500" : undefined}
+                      _hover={opportunity.resultsFinalized && opportunity.result === idx ? {
+                        bg: "green.600"
+                      } : undefined}
                     >
                       {option}
                       {opportunity.resultsFinalized && opportunity.result === idx && (
@@ -736,6 +757,25 @@ const TournamentScreen = () => {
                     </ChakraButton>
                   ))}
                 </Grid>
+                
+                {/* Show message if results cannot be set yet */}
+                {!opportunity.resultsFinalized && opportunity.startTime > 0 && !canSetResults(opportunity) && (
+                  <Card variant="outline" bg="blue.50" borderColor="blue.200" mt={3}>
+                    <CardBody p={4}>
+                      <HStack gap={2} align="start">
+                        <Text fontSize="lg">⏰</Text>
+                        <VStack align="start" gap={1}>
+                          <Text fontSize="sm" color="blue.700" fontWeight="semibold">
+                            Results cannot be set yet
+                          </Text>
+                          <Text fontSize="xs" color="blue.600">
+                            Wait until the betting opportunity starts at {formatDate(opportunity.startTime)}
+                          </Text>
+                        </VStack>
+                      </HStack>
+                    </CardBody>
+                  </Card>
+                )}
               </VStack>
             </CardBody>
           </Card>
@@ -870,6 +910,121 @@ const TournamentScreen = () => {
       setOpportunitiesLoading(false);
     }
   }, [tournament, providerRef]);
+  
+  // Process results for all betting groups related to this tournament
+  const processResultsForAllGroups = async (betId: number) => {
+    if (!providerRef.current || !tournament || groups.length === 0) {
+      console.log("Skipping processResults: no provider, tournament, or groups");
+      return;
+    }
+
+    console.log(`Processing results for bet ${betId} across ${groups.length} betting groups`);
+    
+    // Show processing toast
+    const processingToastId = toaster.create({
+      title: 'Processing Results',
+      description: `Processing results for ${groups.length} betting groups...`,
+      type: 'loading'
+    });
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    try {
+      const signer = await providerRef.current.getSigner();
+      
+      // Process each betting group sequentially to avoid overwhelming the network
+      for (const group of groups) {
+        try {
+          console.log(`Processing results for group: ${group.address} (${group.description})`);
+          
+          // Create contract instance for this betting group
+          const groupContract = new ethers.Contract(
+            group.address,
+            BETTING_GROUP_ABI,
+            signer
+          );
+          
+          // Call processResults for this bet ID
+          const tx = await groupContract.processResults(betId);
+          
+          // Update toast with current progress
+          toaster.update(processingToastId, {
+            title: 'Processing Results',
+            description: `Processing group ${successCount + errorCount + 1}/${groups.length}: ${group.description}`,
+            type: 'loading'
+          });
+          
+          // Wait for transaction to be mined
+          const receipt = await tx.wait();
+          
+          console.log(`Successfully processed results for group: ${group.address}, tx: ${receipt.hash}`);
+          successCount++;
+          
+        } catch (error: any) {
+          console.error(`Error processing results for group ${group.address}:`, error);
+          errorCount++;
+          
+          // Extract meaningful error message
+          let errorMessage = error.message || 'Unknown error';
+          if (error.reason) {
+            errorMessage = error.reason;
+          } else if (error.data?.message) {
+            errorMessage = error.data.message;
+          }
+          
+          errors.push(`${group.description}: ${errorMessage}`);
+        }
+      }
+      
+      // Dismiss processing toast
+      toaster.dismiss(processingToastId);
+      
+      // Show summary toast based on results
+      if (errorCount === 0) {
+        toaster.success({
+          title: 'Results Processed Successfully',
+          description: `Results processed for all ${successCount} betting groups`
+        });
+        
+        // Broadcast success event
+        if (window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('blockchain_tx', {
+            detail: {
+              type: 'processResults',
+              description: `Processed results for bet ${betId} across ${successCount} betting groups`,
+              successCount,
+              errorCount: 0
+            }
+          }));
+        }
+      } else if (successCount > 0) {
+        toaster.warning({
+          title: 'Partial Success',
+          description: `Processed ${successCount} groups successfully, ${errorCount} failed. Check console for details.`
+        });
+      } else {
+        toaster.error({
+          title: 'Processing Failed',
+          description: `Failed to process results for all ${errorCount} groups. Check console for details.`
+        });
+      }
+      
+      // Log detailed errors if any
+      if (errors.length > 0) {
+        console.error('Detailed processing errors:', errors);
+      }
+      
+    } catch (error: any) {
+      console.error('Error in processResultsForAllGroups:', error);
+      toaster.dismiss(processingToastId);
+      toaster.error({
+        title: 'Processing Failed',
+        description: error.message || 'Failed to process results for betting groups'
+      });
+    }
+  };
   
   if (loading) {
     return (

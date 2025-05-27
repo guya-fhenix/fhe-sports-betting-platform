@@ -149,6 +149,30 @@ describe("Tournament", function () {
     ).to.be.revertedWith("Start time must be set before setting results");
   });
 
+  it("should revert if trying to set results before betting opportunity start time", async function () {
+    // Deploy a new tournament with a future start time
+    const Tournament = await ethers.getContractFactory("Tournament");
+    const block = await ethers.provider.getBlock("latest");
+    if (!block) throw new Error("Failed to get latest block");
+    const now = block.timestamp;
+    const futureStartTime = now + 3600; // 1 hour in the future
+    
+    const bet4 = [{ id: 4, description: "Race 4", startTime: futureStartTime, options: ["Option 1", "Option 2"] }];
+    const t3 = await Tournament.connect(owner).deploy(
+      addr1,
+      "T3",
+      startTime,
+      endTime,
+      bet4
+    );
+    await t3.waitForDeployment();
+    
+    // Try to set results before the betting opportunity starts
+    await expect(
+      (t3 as any).setResults(4, 1, futureStartTime + 100)
+    ).to.be.revertedWith("Betting opportunity has not started yet");
+  });
+
   it("should set results and mark as finalized", async function () {
     await tournament.setResults(1, 2, endTime);
     const result = await tournament.getResults(1);

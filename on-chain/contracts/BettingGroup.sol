@@ -64,7 +64,7 @@ contract BettingGroup {
     // Constants
     uint256 public constant PLATFORM_FEE_PERCENTAGE = 5; // 0.5% to platform
     uint256 public constant WINNER_DISTRIBUTION_PERCENTAGE = 995; // 99.5% to winners
-    uint256 public constant MINIMUM_PARTICIPANTS = 10;
+    uint256 public constant MINIMUM_PARTICIPANTS = 1;  // TODO: It's 1 only for testing purposes
 
     // FHE Constants
     euint256 public ZERO;
@@ -436,7 +436,6 @@ contract BettingGroup {
      */
     function processResults(uint16 _betId) external onlyPlatformAdmin bettingGroupActive
     {
-        if (participantCount < MINIMUM_PARTICIPANTS) revert NotEnoughParticipants();
         if (bettingOpportunityScored[_betId]) revert ResultsAlreadyProcessed();
         Tournament tournament = Tournament(tournamentContract);
         uint16 result = tournament.getResults(_betId);
@@ -451,9 +450,13 @@ contract BettingGroup {
             }
             euint256 points = calculatePoints(participant.bets[_betId].predictedOption, result);
             participant.bets[_betId].pointsAwarded = points;
+            FHE.allowThis(points);
+            FHE.allowSender(points);
+            FHE.allow(points, participantAddr);
             participant.totalPoints = FHE.add(participant.totalPoints, points);
             FHE.allowThis(participant.totalPoints);
             FHE.allowSender(participant.totalPoints);
+            FHE.allow(participant.totalPoints, participantAddr);
         }
         emit ResultsProcessed(_betId, result);
     }
