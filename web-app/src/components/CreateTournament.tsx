@@ -247,7 +247,25 @@ const CreateTournament = ({ provider, onSuccess }: CreateTournamentProps) => {
                       type="datetime-local" 
                       value={startDateValue}
                       onChange={(e) => setStartDateValue(e.target.value)}
+                      onClick={(e) => {
+                        const input = e.target as HTMLInputElement;
+                        input.showPicker?.();
+                      }}
+                      onFocus={(e) => {
+                        const input = e.target as HTMLInputElement;
+                        input.showPicker?.();
+                      }}
                       size="lg"
+                      css={{
+                        cursor: 'pointer',
+                        '&::-webkit-calendar-picker-indicator': {
+                          cursor: 'pointer',
+                          opacity: 0.7,
+                          '&:hover': {
+                            opacity: 1
+                          }
+                        }
+                      }}
                     />
                     {errors.startTime && <Field.ErrorText>{errors.startTime.message}</Field.ErrorText>}
                     <Text fontSize="sm" color="gray.500" mt={1}>Select start date and time</Text>
@@ -259,7 +277,25 @@ const CreateTournament = ({ provider, onSuccess }: CreateTournamentProps) => {
                       type="datetime-local" 
                       value={endDateValue}
                       onChange={(e) => setEndDateValue(e.target.value)}
+                      onClick={(e) => {
+                        const input = e.target as HTMLInputElement;
+                        input.showPicker?.();
+                      }}
+                      onFocus={(e) => {
+                        const input = e.target as HTMLInputElement;
+                        input.showPicker?.();
+                      }}
                       size="lg"
+                      css={{
+                        cursor: 'pointer',
+                        '&::-webkit-calendar-picker-indicator': {
+                          cursor: 'pointer',
+                          opacity: 0.7,
+                          '&:hover': {
+                            opacity: 1
+                          }
+                        }
+                      }}
                     />
                     {errors.endTime && <Field.ErrorText>{errors.endTime.message}</Field.ErrorText>}
                     <Text fontSize="sm" color="gray.500" mt={1}>Select end date and time</Text>

@@ -681,6 +681,7 @@ const TournamentScreen = () => {
                     {opportunity.startTime > 0 ? (
                       <ChakraButton
                         size="sm"
+                        color="gray.500"
                         variant={canUpdateStartTime(opportunity) ? "outline" : "ghost"}
                         onClick={() => canUpdateStartTime(opportunity) && handleStartTimeClick(opportunity)}
                         disabled={!canUpdateStartTime(opportunity)}
@@ -692,6 +693,7 @@ const TournamentScreen = () => {
                       <ChakraButton
                         size="sm"
                         variant="outline"
+                        color="gray.500"
                         onClick={() => handleStartTimeClick(opportunity)}
                       >
                         <Icon as={FiClock} mr={2} />
@@ -727,7 +729,7 @@ const TournamentScreen = () => {
                       textAlign="center"
                       opacity={!canSetResults(opportunity) && !opportunity.resultsFinalized ? 0.6 : 1}
                       bg={opportunity.resultsFinalized && opportunity.result === idx ? "green.500" : undefined}
-                      color={opportunity.resultsFinalized && opportunity.result === idx ? "white" : undefined}
+                      color={opportunity.resultsFinalized && opportunity.result === idx ? "white" : "gray.700"}
                       borderColor={opportunity.resultsFinalized && opportunity.result === idx ? "green.500" : undefined}
                       _hover={opportunity.resultsFinalized && opportunity.result === idx ? {
                         bg: "green.600"

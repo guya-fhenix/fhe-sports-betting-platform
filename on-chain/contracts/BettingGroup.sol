@@ -552,8 +552,8 @@ contract BettingGroup {
     // Stage 1: Request decryption of all participant points
     function requestPointsDecryption() external onlyPlatformAdmin bettingGroupActive {
         require(participantCount >= MINIMUM_PARTICIPANTS, "Not enough participants");
-        require(scoredBettingOpportunities == prizeDistribution.length, "Not all results processed");
         Tournament tournament = Tournament(tournamentContract);
+        require(scoredBettingOpportunities == tournament.getBettingOpportunitiesCount(), "Not all results processed");
         require(block.timestamp > tournament.endTime(), "Tournament has not ended");
 
         for (uint256 i = 0; i < participantAddresses.length; i++) {
