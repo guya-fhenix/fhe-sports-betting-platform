@@ -3,6 +3,7 @@ import json
 import asyncio
 import os
 import logging
+import requests
 from config import FACTORY_CONTRACT_ADDRESS, RPC_URL, STARTING_BLOCK
 from db import (
     save_tournament, save_group, save_last_processed_block, get_last_processed_block,
@@ -38,6 +39,133 @@ web3 = Web3(Web3.HTTPProvider(RPC_URL))
 
 # Initialize factory contract
 factory_contract = web3.eth.contract(address=FACTORY_CONTRACT_ADDRESS, abi=FACTORY_ABI)
+
+# Cache for ETH price to avoid too many API calls
+eth_price_cache = {"price": None, "timestamp": 0}
+ETH_PRICE_CACHE_DURATION = 600  # 10 minutes (increased from 5 to reduce API calls)
+
+async def get_eth_price_usd():
+    """Get current ETH price in USD with caching"""
+    import time
+    
+    current_time = time.time()
+    
+    # Check if we have a cached price that's still valid
+    if (eth_price_cache["price"] is not None and 
+        current_time - eth_price_cache["timestamp"] < ETH_PRICE_CACHE_DURATION):
+        logger.debug(f"Using cached ETH price: ${eth_price_cache['price']}")
+        return eth_price_cache["price"]
+    
+    # Try to fetch fresh price with retry logic
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                logger.info(f"Retrying ETH price fetch (attempt {attempt + 1}/{max_retries})...")
+                await asyncio.sleep(retry_delay * attempt)  # Exponential backoff
+            
+            logger.debug("Fetching fresh ETH price from CoinGecko API...")
+            
+            # Use CoinGecko API to get ETH price
+            response = requests.get(
+                "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+                timeout=15,  # Increased timeout
+                headers={
+                    'User-Agent': 'FHE-Sports-Betting-Platform/1.0',
+                    'Accept': 'application/json'
+                }
+            )
+            
+            # Handle rate limiting specifically
+            if response.status_code == 429:
+                logger.warning(f"Rate limited by CoinGecko API (attempt {attempt + 1})")
+                if attempt < max_retries - 1:
+                    continue  # Try again with backoff
+                else:
+                    raise requests.exceptions.RequestException("Rate limited after all retries")
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'ethereum' not in data or 'usd' not in data['ethereum']:
+                raise ValueError("Invalid response format from CoinGecko API")
+            
+            price = data["ethereum"]["usd"]
+            
+            if not isinstance(price, (int, float)) or price <= 0:
+                raise ValueError(f"Invalid price value: {price}")
+            
+            # Update cache
+            eth_price_cache["price"] = price
+            eth_price_cache["timestamp"] = current_time
+            
+            logger.info(f"Updated ETH price: ${price}")
+            return price
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Network error fetching ETH price (attempt {attempt + 1}): {e}")
+            if attempt == max_retries - 1:
+                break
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Data error fetching ETH price (attempt {attempt + 1}): {e}")
+            if attempt == max_retries - 1:
+                break
+        except Exception as e:
+            logger.error(f"Unexpected error fetching ETH price (attempt {attempt + 1}): {e}")
+            if attempt == max_retries - 1:
+                break
+    
+    # Return cached price if available, otherwise return None
+    if eth_price_cache["price"] is not None:
+        logger.info(f"Using stale cached ETH price due to fetch error: ${eth_price_cache['price']}")
+        return eth_price_cache["price"]
+    else:
+        logger.warning("No ETH price available (no cache and fetch failed)")
+        return None
+
+async def get_transaction_gas_info(tx_hash):
+    """Get gas information for a transaction"""
+    try:
+        logger.debug(f"Getting gas info for transaction: {tx_hash.hex() if hasattr(tx_hash, 'hex') else tx_hash}")
+        
+        # Convert tx_hash to proper format if needed
+        if hasattr(tx_hash, 'hex'):
+            tx_hash_str = tx_hash.hex()
+        else:
+            tx_hash_str = tx_hash
+        
+        # Get transaction receipt
+        tx_receipt = web3.eth.get_transaction_receipt(tx_hash_str)
+        
+        # Get transaction details
+        tx = web3.eth.get_transaction(tx_hash_str)
+        
+        # Calculate gas costs
+        gas_used = tx_receipt.gasUsed
+        gas_price = tx.gasPrice  # in wei
+        gas_cost_wei = gas_used * gas_price
+        gas_cost_eth = web3.from_wei(gas_cost_wei, 'ether')
+        
+        # Get ETH price for USD calculation
+        eth_price_usd = await get_eth_price_usd()
+        gas_cost_usd = float(gas_cost_eth) * eth_price_usd if eth_price_usd else None
+        
+        gas_info = {
+            "gas_used": gas_used,
+            "gas_price_gwei": float(web3.from_wei(gas_price, 'gwei')),
+            "gas_cost_eth": float(gas_cost_eth),
+            "gas_cost_usd": gas_cost_usd,
+            "eth_price_usd": eth_price_usd
+        }
+        
+        logger.debug(f"Gas info calculated: {gas_info}")
+        return gas_info
+        
+    except Exception as e:
+        logger.error(f"Error getting gas info for transaction {tx_hash}: {e}")
+        return None
 
 # Function to get tournament contract
 def get_tournament_contract(address):
@@ -284,6 +412,10 @@ async def process_tournament_created(event):
     # Add tournament to known tournaments for event watching
     add_known_tournament(tournament_address)
     
+    # Get gas information
+    tx_hash = event['transactionHash']
+    gas_info = await get_transaction_gas_info(tx_hash)
+    
     # Prepare data for storage - store timestamps as UTC seconds
     tournament_data = {
         'description': description,
@@ -298,15 +430,22 @@ async def process_tournament_created(event):
     save_tournament(tournament_address, tournament_data)
     logger.info(f"Saved tournament {tournament_address}: {description} with UTC timestamps")
     
+    # Prepare broadcast data
+    broadcast_data = {
+        "address": tournament_address,
+        "description": description,
+        "tx_hash": event['transactionHash'].hex()
+    }
+    
+    # Add gas information if available
+    if gas_info:
+        broadcast_data["gas_info"] = gas_info
+    
     # Broadcast event via Socket.IO
     await active_ws_manager.broadcast_blockchain_event(
         event_type="tournament",
         message=f"New tournament created: {description[:30]}{'...' if len(description) > 30 else ''}",
-        data={
-            "address": tournament_address,
-            "description": description,
-            "tx_hash": event['transactionHash'].hex()
-        }
+        data=broadcast_data
     )
 
 async def process_betting_group_created(event):
@@ -324,6 +463,10 @@ async def process_betting_group_created(event):
     # Add group to known betting groups for event watching
     add_known_betting_group(group_address)
     
+    # Get gas information
+    tx_hash = event['transactionHash']
+    gas_info = await get_transaction_gas_info(tx_hash)
+    
     # Prepare data for storage - store timestamps as UTC seconds
     group_data = {
         'description': description,
@@ -339,16 +482,23 @@ async def process_betting_group_created(event):
     save_group(group_address, group_data)
     logger.info(f"Saved betting group {group_address}: {description} for tournament {tournament_address} with UTC timestamps")
     
+    # Prepare broadcast data
+    broadcast_data = {
+        "address": group_address,
+        "tournament_address": tournament_address,
+        "description": description,
+        "tx_hash": event['transactionHash'].hex()
+    }
+    
+    # Add gas information if available
+    if gas_info:
+        broadcast_data["gas_info"] = gas_info
+    
     # Broadcast event via Socket.IO
     await active_ws_manager.broadcast_blockchain_event(
         event_type="group",
         message=f"New betting group created: {description[:30]}{'...' if len(description) > 30 else ''}",
-        data={
-            "address": group_address,
-            "tournament_address": tournament_address,
-            "description": description,
-            "tx_hash": event['transactionHash'].hex()
-        }
+        data=broadcast_data
     )
 
 async def process_betting_opportunity_start_time_updated(tournament_address, event):
@@ -358,6 +508,9 @@ async def process_betting_opportunity_start_time_updated(tournament_address, eve
     # Extract event data
     bet_id = args['id']
     start_time = args['startTime']
+    
+    # Get gas information
+    gas_info = await get_transaction_gas_info(event['transactionHash'])
     
     # Get tournament data to include in the broadcast
     tournament_data = None
@@ -372,16 +525,23 @@ async def process_betting_opportunity_start_time_updated(tournament_address, eve
         logger.error(f"Error getting tournament data: {e}")
         tournament_data = {'address': tournament_address}
     
+    # Prepare broadcast data
+    broadcast_data = {
+        "tournament": tournament_data,
+        "bet_id": bet_id,
+        "start_time": start_time,
+        "tx_hash": event['transactionHash'].hex()
+    }
+    
+    # Add gas information if available
+    if gas_info:
+        broadcast_data["gas_info"] = gas_info
+    
     # Broadcast event via Socket.IO
     await active_ws_manager.broadcast_blockchain_event(
         event_type="betting_opportunity_updated",
         message=f"Betting opportunity #{bet_id} start time updated",
-        data={
-            "tournament": tournament_data,
-            "bet_id": bet_id,
-            "start_time": start_time,
-            "tx_hash": event['transactionHash'].hex()
-        }
+        data=broadcast_data
     )
 
 async def process_participant_registered(group_address, event):
@@ -425,17 +585,27 @@ async def process_participant_registered(group_address, event):
         tx_hash = event['transactionHash'].hex()
         block_number = event['blockNumber']
         
+        # Get gas information
+        gas_info = await get_transaction_gas_info(event['transactionHash'])
+        
+        # Prepare broadcast data
+        broadcast_data = {
+            "group": group_data,
+            "participant": participant_address,
+            "name": name,
+            "tx_hash": tx_hash,
+            "block_number": block_number
+        }
+        
+        # Add gas information if available
+        if gas_info:
+            broadcast_data["gas_info"] = gas_info
+        
         # Broadcast event via Socket.IO
         await active_ws_manager.broadcast_blockchain_event(
             event_type="participant_registered",
             message=f"Participant {name} registered for betting group",
-            data={
-                "group": group_data,
-                "participant": participant_address,
-                "name": name,
-                "tx_hash": tx_hash,
-                "block_number": block_number
-            }
+            data=broadcast_data
         )
     except Exception as e:
         logger.error(f"Error in process_participant_registered: {e}", exc_info=True)
@@ -480,16 +650,26 @@ async def process_participant_withdrawn(group_address, event):
         tx_hash = event['transactionHash'].hex()
         block_number = event['blockNumber']
         
+        # Get gas information
+        gas_info = await get_transaction_gas_info(event['transactionHash'])
+        
+        # Prepare broadcast data
+        broadcast_data = {
+            "group": group_data,
+            "participant": participant_address,
+            "tx_hash": tx_hash,
+            "block_number": block_number
+        }
+        
+        # Add gas information if available
+        if gas_info:
+            broadcast_data["gas_info"] = gas_info
+        
         # Broadcast event via Socket.IO
         await active_ws_manager.broadcast_blockchain_event(
             event_type="participant_withdrawn",
             message=f"Participant withdrawn from betting group",
-            data={
-                "group": group_data,
-                "participant": participant_address,
-                "tx_hash": tx_hash,
-                "block_number": block_number
-            }
+            data=broadcast_data
         )
     except Exception as e:
         logger.error(f"Error in process_participant_withdrawn: {e}", exc_info=True)
@@ -502,6 +682,9 @@ async def process_results_processed(group_address, event):
     bet_id = args['betId']
     result = args['result']
     
+    # Get gas information
+    gas_info = await get_transaction_gas_info(event['transactionHash'])
+    
     # Get group data to include in the broadcast
     group_data = None
     try:
@@ -517,22 +700,32 @@ async def process_results_processed(group_address, event):
         logger.error(f"Error getting group data: {e}")
         group_data = {'address': group_address}
     
+    # Prepare broadcast data
+    broadcast_data = {
+        "group": group_data,
+        "bet_id": bet_id,
+        "result": result,
+        "tx_hash": event['transactionHash'].hex()
+    }
+    
+    # Add gas information if available
+    if gas_info:
+        broadcast_data["gas_info"] = gas_info
+    
     # Broadcast event via Socket.IO
     await active_ws_manager.broadcast_blockchain_event(
         event_type="results_processed",
         message=f"Results processed for betting opportunity #{bet_id}",
-        data={
-            "group": group_data,
-            "bet_id": bet_id,
-            "result": result,
-            "tx_hash": event['transactionHash'].hex()
-        }
+        data=broadcast_data
     )
 
 async def process_betting_group_finalized(group_address, event):
     """Process BettingGroupFinalized event"""
     logger.info(f"Betting group {group_address} finalized")
     
+    # Get gas information
+    gas_info = await get_transaction_gas_info(event['transactionHash'])
+    
     # Get group data to include in the broadcast
     group_data = None
     try:
@@ -548,20 +741,30 @@ async def process_betting_group_finalized(group_address, event):
         logger.error(f"Error getting group data: {e}")
         group_data = {'address': group_address}
     
+    # Prepare broadcast data
+    broadcast_data = {
+        "group": group_data,
+        "tx_hash": event['transactionHash'].hex()
+    }
+    
+    # Add gas information if available
+    if gas_info:
+        broadcast_data["gas_info"] = gas_info
+    
     # Broadcast event via Socket.IO
     await active_ws_manager.broadcast_blockchain_event(
         event_type="betting_group_finalized",
         message=f"Betting group has been finalized",
-        data={
-            "group": group_data,
-            "tx_hash": event['transactionHash'].hex()
-        }
+        data=broadcast_data
     )
 
 async def process_betting_group_cancelled(group_address, event):
     """Process BettingGroupCancelled event"""
     logger.info(f"Betting group {group_address} cancelled")
     
+    # Get gas information
+    gas_info = await get_transaction_gas_info(event['transactionHash'])
+    
     # Get group data to include in the broadcast
     group_data = None
     try:
@@ -577,14 +780,21 @@ async def process_betting_group_cancelled(group_address, event):
         logger.error(f"Error getting group data: {e}")
         group_data = {'address': group_address}
     
+    # Prepare broadcast data
+    broadcast_data = {
+        "group": group_data,
+        "tx_hash": event['transactionHash'].hex()
+    }
+    
+    # Add gas information if available
+    if gas_info:
+        broadcast_data["gas_info"] = gas_info
+    
     # Broadcast event via Socket.IO
     await active_ws_manager.broadcast_blockchain_event(
         event_type="betting_group_cancelled",
         message=f"Betting group has been cancelled",
-        data={
-            "group": group_data,
-            "tx_hash": event['transactionHash'].hex()
-        }
+        data=broadcast_data
     )
 
 # Function to check if a user is registered in a group via blockchain (for verification)

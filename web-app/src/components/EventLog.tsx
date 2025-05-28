@@ -24,6 +24,15 @@ interface CloudEvent {
   data?: any;
 }
 
+// Define gas information interface
+interface GasInfo {
+  gas_used: number;
+  gas_price_gwei: number;
+  gas_cost_eth: number;
+  gas_cost_usd?: number;
+  eth_price_usd?: number;
+}
+
 interface EventLogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -210,6 +219,26 @@ const EventLog = ({ isOpen, onClose }: EventLogProps) => {
     return new Date(timestamp).toLocaleTimeString();
   };
   
+  // Format gas information for display
+  const formatGasInfo = (gasInfo: GasInfo) => {
+    const gasUsedFormatted = gasInfo.gas_used.toLocaleString();
+    const gasPriceFormatted = gasInfo.gas_price_gwei.toFixed(2);
+    const gasEthFormatted = gasInfo.gas_cost_eth.toFixed(6);
+    const gasUsdFormatted = gasInfo.gas_cost_usd ? `$${gasInfo.gas_cost_usd.toFixed(2)}` : 'N/A';
+    
+    return {
+      gasUsed: gasUsedFormatted,
+      gasPrice: gasPriceFormatted,
+      gasEth: gasEthFormatted,
+      gasUsd: gasUsdFormatted
+    };
+  };
+  
+  // Check if event has gas information
+  const hasGasInfo = (event: CloudEvent): boolean => {
+    return event.data && event.data.gas_info && typeof event.data.gas_info === 'object';
+  };
+  
   // Return null if not open
   if (!isOpen) return null;
   
@@ -335,6 +364,55 @@ const EventLog = ({ isOpen, onClose }: EventLogProps) => {
                         >
                           {event.message}
                         </Text>
+                        
+                        {/* Gas Information Display */}
+                        {hasGasInfo(event) && (
+                          <Box 
+                            mt={2} 
+                            p={3} 
+                            bg="gray.50" 
+                            borderRadius="md" 
+                            border="1px solid" 
+                            borderColor="gray.200"
+                          >
+                            <Text fontSize="xs" fontWeight="semibold" color="gray.600" mb={2}>
+                              ⛽ Transaction Gas Details
+                            </Text>
+                            <VStack align="stretch" gap={1}>
+                              {(() => {
+                                const gasInfo = formatGasInfo(event.data.gas_info);
+                                return (
+                                  <>
+                                    <Flex justify="space-between" align="center">
+                                      <Text fontSize="xs" color="gray.600">Gas Used:</Text>
+                                      <Text fontSize="xs" color="gray.800" fontWeight="medium" fontFamily="mono">
+                                        {gasInfo.gasUsed}
+                                      </Text>
+                                    </Flex>
+                                    <Flex justify="space-between" align="center">
+                                      <Text fontSize="xs" color="gray.600">Gas Price:</Text>
+                                      <Text fontSize="xs" color="gray.800" fontWeight="medium" fontFamily="mono">
+                                        {gasInfo.gasPrice} Gwei
+                                      </Text>
+                                    </Flex>
+                                    <Flex justify="space-between" align="center">
+                                      <Text fontSize="xs" color="gray.600">Cost (ETH):</Text>
+                                      <Text fontSize="xs" color="blue.600" fontWeight="semibold" fontFamily="mono">
+                                        {gasInfo.gasEth} ETH
+                                      </Text>
+                                    </Flex>
+                                    <Flex justify="space-between" align="center">
+                                      <Text fontSize="xs" color="gray.600">Cost (USD):</Text>
+                                      <Text fontSize="xs" color="green.600" fontWeight="semibold" fontFamily="mono">
+                                        {gasInfo.gasUsd}
+                                      </Text>
+                                    </Flex>
+                                  </>
+                                );
+                              })()}
+                            </VStack>
+                          </Box>
+                        )}
                       </VStack>
                     </CardBody>
                   </Card>

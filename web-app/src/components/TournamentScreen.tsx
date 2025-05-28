@@ -46,7 +46,7 @@ const TournamentScreen = () => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [bettingOpportunities, setBettingOpportunities] = useState<any[]>([]);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
-  const [ethPriceUsd, setEthPriceUsd] = useState(3500); // Default fallback value
+  const [ethPriceUsd, setEthPriceUsd] = useState(3500); // Fallback ETH price for local gas calculations (detailed gas info available in EventLog)
   
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -240,25 +240,6 @@ const TournamentScreen = () => {
     console.log("Address changed, fetching tournament:", address);
     fetchTournament();
   }, [address, fetchTournament]);
-  
-  // Fetch current ETH price
-  useEffect(() => {
-    const fetchEthPrice = async () => {
-      try {
-        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-        const data = await response.json();
-        if (data && data.ethereum && data.ethereum.usd) {
-          setEthPriceUsd(data.ethereum.usd);
-          console.log('Fetched ETH price:', data.ethereum.usd);
-        }
-      } catch (error) {
-        console.error('Error fetching ETH price:', error);
-        // Keep using default price if fetch fails
-      }
-    };
-    
-    fetchEthPrice();
-  }, []);
   
   // Modified version of toaster error calls with proper text wrapping
   const showErrorToast = (title: string, message: string) => {
@@ -587,10 +568,12 @@ const TournamentScreen = () => {
   // Check if results can be set for a betting opportunity
   const canSetResults = (opportunity: any) => {
     if (opportunity.resultsFinalized) return false;
-    if (opportunity.startTime === 0) return false; // Start time must be set
+    if (!tournament) return false; // Tournament must be available
+    if (opportunity.startTime === 0) return false; // Betting opportunity start time must be set
     
     const now = getCurrentBlockchainTime();
-    return now >= opportunity.startTime; // Start time must have passed
+    // Both tournament must have started AND betting opportunity start time must have passed
+    return now >= tournament.startTime && now >= opportunity.startTime;
   };
   
   const fetchGroups = async () => {
@@ -759,7 +742,7 @@ const TournamentScreen = () => {
                 </Grid>
                 
                 {/* Show message if results cannot be set yet */}
-                {!opportunity.resultsFinalized && opportunity.startTime > 0 && !canSetResults(opportunity) && (
+                {!opportunity.resultsFinalized && !canSetResults(opportunity) && (
                   <Card variant="outline" bg="blue.50" borderColor="blue.200" mt={3}>
                     <CardBody p={4}>
                       <HStack gap={2} align="start">
@@ -769,7 +752,10 @@ const TournamentScreen = () => {
                             Results cannot be set yet
                           </Text>
                           <Text fontSize="xs" color="blue.600">
-                            Wait until the betting opportunity starts at {formatDate(opportunity.startTime)}
+                            {opportunity.startTime === 0 
+                              ? "Betting opportunity start time must be set first"
+                              : `Wait until both tournament starts (${formatDate(tournament?.startTime || 0)}) and betting opportunity starts (${formatDate(opportunity.startTime)})`
+                            }
                           </Text>
                         </VStack>
                       </HStack>
@@ -1323,4 +1309,4 @@ const TournamentScreen = () => {
   );
 };
 
-export default TournamentScreen; 
+export default TournamentScreen;

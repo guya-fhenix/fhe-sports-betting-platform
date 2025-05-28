@@ -4,7 +4,6 @@ pragma solidity ^0.8.25;
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import "./Tournament.sol";
 import { InEuint16, InEuint32, InEuint256 } from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
-import "hardhat/console.sol";
 
 /**
  * @title BettingGroup
@@ -68,6 +67,8 @@ contract BettingGroup {
 
     // FHE Constants
     euint256 public ZERO;
+    euint256 public ONE;
+    ebool public FALSE;
     euint16 public INVALID_PREDICTION;
     
     // Finalization and decryption state
@@ -96,7 +97,8 @@ contract BettingGroup {
     // Results and ranking tracking
     Leaderboard public leaderboard;
     mapping(uint16 => bool) public bettingOpportunityScored;
-    mapping(uint16 => uint16) public actualResults; // betId => actual result
+    mapping(uint16 => uint16) public actualResults;
+    mapping(uint16 => euint256) public encryptedCorrectUsersCount;
     uint16 public scoredBettingOpportunities;
     mapping(address => uint256) public claimableBalance;
     mapping(address => uint256) public decryptedPoints;
@@ -145,14 +147,12 @@ contract BettingGroup {
     }
 
     modifier onlyAfterTournamentEnd() {
-        // Registration is open until tournament ends
         Tournament tournament = Tournament(tournamentContract);
         if (block.timestamp <= tournament.endTime()) revert TournamentNotEnded();
         _;
     }
 
     modifier onlyBeforeTournamentEnd() {
-        // Registration is open until tournament ends
         Tournament tournament = Tournament(tournamentContract);
         if (block.timestamp >= tournament.endTime()) revert TournamentEnded();
         _;
@@ -182,9 +182,8 @@ contract BettingGroup {
         uint256[] memory _prizeDistribution,
         uint32 _generalClosingWindowInSeconds
     ) {
-        // All validations are now handled by the factory
         platformAdmin = _platformAdmin;
-        factoryContract = msg.sender; // The factory is the deployer
+        factoryContract = msg.sender;
         tournamentContract = _tournamentContract;
         description = _description;
         entryFee = _entryFee;
@@ -202,9 +201,13 @@ contract BettingGroup {
 
         // Initialize FHE constants
         ZERO = FHE.asEuint256(0);
+        ONE = FHE.asEuint256(1);
         INVALID_PREDICTION = FHE.asEuint16(type(uint16).max);
-        FHE.allowThis(ZERO);
-        FHE.allowThis(INVALID_PREDICTION);    
+        FALSE = FHE.asEbool(false);
+        FHE.allowGlobal(ZERO);
+        FHE.allowGlobal(ONE);
+        FHE.allowGlobal(INVALID_PREDICTION);
+        FHE.allowGlobal(FALSE);
     }
 
     /**
@@ -377,18 +380,14 @@ contract BettingGroup {
         // Get the betting opportunities from the tournament
         Tournament tournament = Tournament(tournamentContract);
         Tournament.BettingOpportunity[] memory opportunities = tournament.getBettingOpportunities();
-        
-        console.log("Total betting opportunities:", opportunities.length);
-        
+                
         // First, count how many bets this participant has placed
         uint16 placedCount = 0;
         for (uint i = 0; i < opportunities.length; i++) {
             uint16 betId = opportunities[i].id;
             bool betPlaced = participants[_participant].bets[betId].placed;
-            console.log("Opportunity ID", betId, "bet placed:", betPlaced);
             if (betPlaced) {
                 placedCount++;
-                console.log("Found bet for opportunity ID:", betId);
             }
         }
                 
@@ -401,7 +400,6 @@ contract BettingGroup {
         for (uint i = 0; i < opportunities.length; i++) {
             uint16 betId = opportunities[i].id;
             if (participants[_participant].bets[betId].placed) {
-                console.log("Adding bet", betId, "to results at index", index);
                 betIds[index] = betId;
                 betsInfo[index] = participants[_participant].bets[betId];
                 index++;
@@ -442,40 +440,73 @@ contract BettingGroup {
         actualResults[_betId] = result;
         bettingOpportunityScored[_betId] = true;
         scoredBettingOpportunities++;
+
+        // Initialize encrypted values
+        euint256 encryptedCorrectCount = ZERO;
+        euint16 encryptedActual = FHE.asEuint16(result);
+        
+        // Accumulate correct count and award points
         for (uint256 i = 0; i < participantAddresses.length; i++) {
             address participantAddr = participantAddresses[i];
             Participant storage participant = participants[participantAddr];
-            if (!participant.bets[_betId].placed) {
+            
+            // Skip if participant is not registered
+            if (!participant.hasRegistered) {
                 continue;
             }
-            euint256 points = calculatePoints(participant.bets[_betId].predictedOption, result);
+            
+            euint256 points;
+            ebool isCorrect;
+            (points, isCorrect) = calculatePoints(participant, _betId, encryptedActual);
+            
+            // Add to correct count if correct
+            encryptedCorrectCount = FHE.add(encryptedCorrectCount, FHE.select(isCorrect, ONE, ZERO));
+            
+            // Store points and update total
             participant.bets[_betId].pointsAwarded = points;
             FHE.allowThis(points);
             FHE.allowSender(points);
             FHE.allow(points, participantAddr);
+            
             participant.totalPoints = FHE.add(participant.totalPoints, points);
             FHE.allowThis(participant.totalPoints);
             FHE.allowSender(participant.totalPoints);
             FHE.allow(participant.totalPoints, participantAddr);
         }
+        
+        // Store encrypted correct users count and make it globally accessible
+        encryptedCorrectUsersCount[_betId] = encryptedCorrectCount;
+        FHE.allowGlobal(encryptedCorrectUsersCount[_betId]);
+        
         emit ResultsProcessed(_betId, result);
     }
     
     /**
-     * @notice Calculates points for a bet based on predicted vs actual result
-     * @param _encryptedPredicted Encrypted predicted option
-     * @param _actual Actual result
-     * @return Encrypted points earned for the bet
+     * @notice Calculates points for a participant's bet
+     * @param participant The participant storage reference
+     * @param _betId The betting opportunity ID
+     * @param encryptedActual The encrypted actual result
+     * @return points The encrypted points awarded
+     * @return isCorrect Whether the prediction was correct (encrypted boolean)
      */
     function calculatePoints(
-        euint16 _encryptedPredicted,
-        uint16 _actual
-    ) internal returns (euint256) {
-        // Convert uint16 actual result to euint16 for comparison (same bit width)
-        euint16 encryptedActual = FHE.asEuint16(_actual);
-        ebool isCorrect = FHE.eq(_encryptedPredicted, encryptedActual);
-        // Return euint256(1) or euint256(0) as encrypted points (same bit width)
-        return FHE.select(isCorrect, FHE.asEuint256(1), FHE.asEuint256(0));
+        Participant storage participant,
+        uint16 _betId,
+        euint16 encryptedActual
+    ) internal returns (euint256 points, ebool isCorrect) {
+        if (participant.bets[_betId].placed) {
+            // Check if prediction is correct
+            isCorrect = FHE.eq(participant.bets[_betId].predictedOption, encryptedActual);
+            
+            // Award points: 1 point if correct, 0 if wrong
+            points = FHE.select(isCorrect, ONE, ZERO);
+        } else {
+            // No bet placed = 0 points and not correct
+            points = ZERO;
+            isCorrect = FALSE;
+        }
+        
+        return (points, isCorrect);
     }
     
     /**

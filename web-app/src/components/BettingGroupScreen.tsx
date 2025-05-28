@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
-  Button as ChakraButton,
   Flex,
   Heading,
   HStack,
@@ -65,7 +64,6 @@ const BettingGroupScreen = () => {
   const [userName, setUserName] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [isUserRegistered, setIsUserRegistered] = useState(false);
-  const [participants, setParticipants] = useState<{address: string; name: string}[]>([]);
   const [participantCount, setParticipantCount] = useState(0);
   const [prizePool, setPrizePool] = useState('0');
   const [bets, setBets] = useState<UserBet[]>([]);
@@ -95,18 +93,24 @@ const BettingGroupScreen = () => {
   const [currentUserAddress, setCurrentUserAddress] = useState<string>('');
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   
-  // Local storage key for caching decrypted values
-  const getCacheKey = () => `fhe-betting-decrypted-values-${groupAddress || 'unknown'}`;
+  // Add state for betting statistics
+  const [bettingStats, setBettingStats] = useState<{[betId: number]: {
+    encryptedCorrectUsers: string;
+    decryptedCorrectUsers: number | null;
+    totalUsers: number;
+    isDecrypting: boolean;
+  }}>({});
+  
+  // Local storage key for caching decrypted values - now global cache
+  const getCacheKey = () => `fhe-betting-decrypted-values-global`;
   
   // Load cached decrypted values from local storage
   const loadCachedValues = useCallback(() => {
-    if (!groupAddress) return;
-    
     try {
       const cached = localStorage.getItem(getCacheKey());
       if (cached) {
         const parsedCache = JSON.parse(cached);
-        console.log('Loaded cached decrypted values for group:', groupAddress, parsedCache);
+        console.log('Loaded cached decrypted values:', parsedCache);
         setUnsealedValues(parsedCache);
         
         // Show toast if cached values were loaded
@@ -121,46 +125,24 @@ const BettingGroupScreen = () => {
     } catch (error) {
       console.error('Error loading cached values:', error);
     }
-  }, [groupAddress]);
+  }, []);
   
-  // Save decrypted value to local storage
-  const saveCachedValue = useCallback((valueKey: string, decryptedValue: string) => {
-    if (!groupAddress) return;
-    
+  // Save decrypted value to local storage using encrypted value as key
+  const saveCachedValue = useCallback((encryptedValue: string, decryptedValue: string) => {
     try {
       const cacheKey = getCacheKey();
       const cached = localStorage.getItem(cacheKey);
       const existingCache = cached ? JSON.parse(cached) : {};
       const updatedCache = {
         ...existingCache,
-        [valueKey]: decryptedValue
+        [encryptedValue]: decryptedValue
       };
       localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
-      console.log(`Cached decrypted value for ${valueKey} in group ${groupAddress}:`, decryptedValue);
+      console.log(`Cached decrypted value for encrypted value ${encryptedValue}:`, decryptedValue);
     } catch (error) {
       console.error('Error saving cached value:', error);
     }
-  }, [groupAddress]);
-  
-  // Clear cached values (optional utility function)
-  const clearCachedValues = useCallback(() => {
-    if (!groupAddress) return;
-    
-    try {
-      const cacheKey = getCacheKey();
-      localStorage.removeItem(cacheKey);
-      setUnsealedValues({});
-      console.log('Cleared all cached decrypted values for group:', groupAddress);
-      
-      // Show toast notification
-      toaster.success({
-        title: 'Cache Cleared',
-        description: 'All cached decrypted values have been removed'
-      });
-    } catch (error) {
-      console.error('Error clearing cached values:', error);
-    }
-  }, [groupAddress]);
+  }, []);
   
   // Reference to provider and initialization status
   const providerRef = useRef<ethers.BrowserProvider | null>(null);
@@ -597,6 +579,152 @@ const BettingGroupScreen = () => {
     }
   }, [groupAddress, currentUserAddress]);
   
+  // Fetch betting statistics for scored opportunities
+  const fetchBettingStats = async () => {
+    if (!providerRef.current || !groupAddress || !isCofhejsInitialized) return;
+    
+    try {
+      const contract = new ethers.Contract(
+        groupAddress,
+        BETTING_GROUP_ABI,
+        providerRef.current
+      );
+      
+      const newStats: {[betId: number]: {
+        encryptedCorrectUsers: string;
+        decryptedCorrectUsers: number | null;
+        totalUsers: number;
+        isDecrypting: boolean;
+      }} = {};
+      
+      // Check each betting opportunity to see if it's been scored
+      for (const opportunity of bettingOpportunities) {
+        if (opportunity.resultsFinalized) {
+          try {
+            // Get encrypted correct users count and participant count directly
+            const encryptedCorrectUsers = await contract.encryptedCorrectUsersCount(opportunity.id);
+            const totalUsers = await contract.participantCount();
+            
+            const encryptedValue = encryptedCorrectUsers.toString();
+            
+            newStats[opportunity.id] = {
+              encryptedCorrectUsers: encryptedValue,
+              decryptedCorrectUsers: null,
+              totalUsers: Number(totalUsers),
+              isDecrypting: true
+            };
+            
+            console.log(`Stats for bet ${opportunity.id}:`, newStats[opportunity.id]);
+            
+            // Check if already decrypted in cache
+            if (unsealedValues[encryptedValue] !== undefined) {
+              newStats[opportunity.id].decryptedCorrectUsers = parseInt(unsealedValues[encryptedValue]);
+              newStats[opportunity.id].isDecrypting = false;
+            }
+          } catch (error) {
+            console.error(`Error fetching stats for bet ${opportunity.id}:`, error);
+          }
+        }
+      }
+      
+      setBettingStats(newStats);
+      
+      // Automatically decrypt encrypted values that aren't cached
+      for (const [betIdStr, stats] of Object.entries(newStats)) {
+        if (stats.isDecrypting && stats.encryptedCorrectUsers !== '0') {
+          // Decrypt automatically without user interaction
+          setTimeout(() => {
+            autoDecryptCorrectUsers(parseInt(betIdStr), stats.encryptedCorrectUsers);
+          }, 100); // Small delay to avoid overwhelming the system
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error fetching betting statistics:', error);
+    }
+  };
+  
+  // Auto-decrypt correct users count
+  const autoDecryptCorrectUsers = async (betId: number, encryptedValue: string) => {
+    if (!isCofhejsInitialized || !providerRef.current) return;
+    
+    // Check if already decrypted
+    if (unsealedValues[encryptedValue] !== undefined) {
+      setBettingStats(prev => ({
+        ...prev,
+        [betId]: {
+          ...prev[betId],
+          decryptedCorrectUsers: parseInt(unsealedValues[encryptedValue]),
+          isDecrypting: false
+        }
+      }));
+      return;
+    }
+
+    try {
+      // Get or create permit
+      const signer = await providerRef.current.getSigner();
+      const userAddress = await signer.getAddress();
+      
+      const permit = await cofhejs.createPermit({
+        type: 'self',
+        issuer: userAddress
+      });
+
+      if (!permit.data) {
+        throw new Error('Failed to create permit');
+      }
+
+      // Unseal the value
+      const permitHash = permit.data.getHash();
+      const unsealResult = await cofhejs.unseal(
+        BigInt(encryptedValue), 
+        FheTypes.Uint256, 
+        permit.data.issuer, 
+        permitHash
+      );
+
+      if (!unsealResult.success) {
+        throw new Error(unsealResult.error?.message || 'Failed to unseal value');
+      }
+
+      // Store the unsealed value
+      const decryptedValue = parseInt(unsealResult.data.toString());
+      
+      setUnsealedValues(prev => ({ 
+        ...prev, 
+        [encryptedValue]: decryptedValue.toString()
+      }));
+      
+      // Save to cache
+      saveCachedValue(encryptedValue, decryptedValue.toString());
+      
+      // Update betting stats
+      setBettingStats(prev => ({
+        ...prev,
+        [betId]: {
+          ...prev[betId],
+          decryptedCorrectUsers: decryptedValue,
+          isDecrypting: false
+        }
+      }));
+
+      console.log(`Auto-decrypted correct users for bet ${betId}:`, decryptedValue);
+
+    } catch (error: any) {
+      console.error(`Error auto-decrypting correct users for bet ${betId}:`, error);
+      
+      // Mark as failed to decrypt
+      setBettingStats(prev => ({
+        ...prev,
+        [betId]: {
+          ...prev[betId],
+          isDecrypting: false
+        }
+      }));
+    }
+  };
+  
   // Request points decryption (Step 1)
   const requestPointsDecryption = async () => {
     if (!groupAddress || !providerRef.current || !tournamentEnded || isDecryptionRequested) return;
@@ -824,8 +952,7 @@ const BettingGroupScreen = () => {
       });
       
       // Wait for transaction to be mined
-      const receipt = await tx.wait();
-      console.log("Transaction receipt:", receipt);
+      await tx.wait();
       
       // Dismiss loading toast
       toaster.dismiss(loadingToastId);
@@ -861,7 +988,7 @@ const BettingGroupScreen = () => {
   };
   
   // Unseal an encrypted value
-  const unsealValue = async (encryptedValue: string, fheType: FheTypes, valueKey: string) => {
+  const unsealValue = async (encryptedValue: string, fheType: FheTypes) => {
     if (!isCofhejsInitialized || !providerRef.current) {
       toaster.error({
         title: 'Unsealing Failed',
@@ -870,13 +997,13 @@ const BettingGroupScreen = () => {
       return;
     }
 
-    // Check if already unsealed
-    if (unsealedValues[valueKey] !== undefined) {
+    // Check if already unsealed using encrypted value as key
+    if (unsealedValues[encryptedValue] !== undefined) {
       return;
     }
 
     try {
-      setUnsealingValues(prev => ({ ...prev, [valueKey]: true }));
+      setUnsealingValues(prev => ({ ...prev, [encryptedValue]: true }));
 
       // Get or create permit
       const signer = await providerRef.current.getSigner();
@@ -909,15 +1036,15 @@ const BettingGroupScreen = () => {
         throw new Error(unsealResult.error?.message || 'Failed to unseal value');
       }
 
-      // Store the unsealed value - convert to string
+      // Store the unsealed value using encrypted value as key
       const unsealedString = unsealResult.data.toString();
       setUnsealedValues(prev => ({ 
         ...prev, 
-        [valueKey]: unsealedString 
+        [encryptedValue]: unsealedString 
       }));
       
-      // Save to local storage cache
-      saveCachedValue(valueKey, unsealedString);
+      // Save to local storage cache using encrypted value as key
+      saveCachedValue(encryptedValue, unsealedString);
 
       toaster.success({
         title: 'Value Decrypted',
@@ -931,7 +1058,7 @@ const BettingGroupScreen = () => {
         description: error.message || 'Failed to decrypt value'
       });
     } finally {
-      setUnsealingValues(prev => ({ ...prev, [valueKey]: false }));
+      setUnsealingValues(prev => ({ ...prev, [encryptedValue]: false }));
     }
   };
   
@@ -971,7 +1098,7 @@ const BettingGroupScreen = () => {
       });
       
       // Wait for transaction to be mined
-      const receipt = await tx.wait();
+      await tx.wait();
       
       // Dismiss loading toast
       toaster.dismiss(loadingToastId);
@@ -1028,7 +1155,7 @@ const BettingGroupScreen = () => {
       });
       
       // Wait for transaction to be mined
-      const receipt = await tx.wait();
+      await tx.wait();
       
       // Dismiss loading toast
       toaster.dismiss(loadingToastId);
@@ -1103,6 +1230,13 @@ const BettingGroupScreen = () => {
     }
   }, [currentUserAddress, checkPlatformAdmin]);
   
+  // Fetch betting statistics when betting opportunities change
+  useEffect(() => {
+    if (bettingOpportunities.length > 0) {
+      fetchBettingStats();
+    }
+  }, [bettingOpportunities]);
+  
   // Return to tournament page
   const goBackToTournament = () => {
     if (tournamentAddress) {
@@ -1155,16 +1289,16 @@ const BettingGroupScreen = () => {
   };
   
   // Helper to format encrypted values for display
-  const formatEncryptedValue = (value: string, fheType: FheTypes, valueKey: string, options?: string[]) => {
+  const formatEncryptedValue = (value: string, fheType: FheTypes, options?: string[]) => {
     if (!value || value === '0') {
       return 'No value';
     }
     
     return (
       <EncryptedTag 
-        onUnseal={() => unsealValue(value, fheType, valueKey)}
-        isUnsealing={unsealingValues[valueKey] || false}
-        unsealedValue={unsealedValues[valueKey]}
+        onUnseal={() => unsealValue(value, fheType)}
+        isUnsealing={unsealingValues[value] || false}
+        unsealedValue={unsealedValues[value]}
         options={options}
       />
     );
@@ -1395,7 +1529,7 @@ const BettingGroupScreen = () => {
                           TOTAL POINTS
                         </Text>
                         {userTotalPoints && userTotalPoints !== '0' ? 
-                          formatEncryptedValue(userTotalPoints, FheTypes.Uint256, `totalPoints-${groupAddress}`) : 
+                          formatEncryptedValue(userTotalPoints, FheTypes.Uint256) : 
                           <HStack 
                             gap={1} 
                             px={2} 
@@ -1407,7 +1541,7 @@ const BettingGroupScreen = () => {
                             _hover={{ opacity: 1, transform: 'scale(1.05)' }}
                           >
                             <Text fontSize="xs" color="gray.500" fontWeight="bold" letterSpacing="wide">
-                              NO POINTS YET
+                              NO VALUE
                             </Text>
                           </HStack>
                         }
@@ -1655,7 +1789,7 @@ const BettingGroupScreen = () => {
                                         CHOICE
                                       </Text>
                                       {userBet.predictedOption && userBet.predictedOption !== '0' ? 
-                                        formatEncryptedValue(userBet.predictedOption, FheTypes.Uint16, `predictedOption-${userBet.id}`, opportunity.options) : 
+                                        formatEncryptedValue(userBet.predictedOption, FheTypes.Uint16, opportunity.options) : 
                                         <HStack 
                                           gap={1} 
                                           px={2} 
@@ -1684,7 +1818,7 @@ const BettingGroupScreen = () => {
                                         SCORE
                                       </Text>
                                       {userBet.pointsAwarded && userBet.pointsAwarded !== '0' ? 
-                                        formatEncryptedValue(userBet.pointsAwarded, FheTypes.Uint256, `pointsAwarded-${userBet.id}`) : 
+                                        formatEncryptedValue(userBet.pointsAwarded, FheTypes.Uint256) : 
                                         <HStack 
                                           gap={1} 
                                           px={2} 
@@ -1727,6 +1861,58 @@ const BettingGroupScreen = () => {
                                 </HStack>
                               </Box>
                             </Box>
+                          )}
+                          
+                          {/* Betting Statistics - Show for finalized opportunities */}
+                          {opportunity.resultsFinalized && bettingStats[opportunity.id] && (
+                            <Card variant="outline" bg="blue.50" borderColor="blue.200">
+                              <CardBody p={4}>
+                                <VStack align="stretch" gap={3}>
+                                  <HStack justify="space-between" align="center">
+                                    <Text fontSize="sm" fontWeight="semibold" color="blue.800">
+                                      📊 Betting Statistics
+                                    </Text>
+                                    <Badge variant="outline" colorScheme="blue" fontSize="xs">
+                                      Simple Scoring
+                                    </Badge>
+                                  </HStack>
+                                  
+                                  <HStack justify="space-around" wrap="wrap" gap={4}>
+                                    <VStack align="center" gap={1}>
+                                      <Text fontSize="xs" color="blue.600" fontWeight="medium">
+                                        Correct Predictions
+                                      </Text>
+                                      <HStack gap={2}>
+                                        {bettingStats[opportunity.id].isDecrypting ? (
+                                          <HStack gap={2}>
+                                            <Spinner size="sm" color="blue.500" />
+                                            <Text fontSize="sm" color="blue.600">Decrypting...</Text>
+                                          </HStack>
+                                        ) : bettingStats[opportunity.id].decryptedCorrectUsers !== null ? (
+                                          <Text fontSize="xl" color="blue.800" fontWeight="bold">
+                                            {bettingStats[opportunity.id].decryptedCorrectUsers}
+                                          </Text>
+                                        ) : (
+                                          <Text fontSize="xl" color="blue.800" fontWeight="bold">0</Text>
+                                        )}
+                                        <Text fontSize="xl" color="blue.800" fontWeight="bold">
+                                          / {bettingStats[opportunity.id].totalUsers}
+                                        </Text>
+                                      </HStack>
+                                    </VStack>
+                                  </HStack>
+                                  
+                                  <Box textAlign="center">
+                                    <Text fontSize="xs" color="blue.500">
+                                      🎯 1 point awarded for each correct prediction
+                                    </Text>
+                                    <Text fontSize="xs" color="blue.400">
+                                      🔐 Automatically decrypted from FHE-protected data
+                                    </Text>
+                                  </Box>
+                                </VStack>
+                              </CardBody>
+                            </Card>
                           )}
                         </VStack>
                       </CardBody>
